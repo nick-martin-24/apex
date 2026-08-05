@@ -1,5 +1,6 @@
 import { pool } from "@/lib/db";
 import { getToken } from "@/lib/tokens";
+import { getDailyRecommendation } from "@/lib/recommendation";
 import PlanForm from "./PlanForm";
 
 // This page hits the database directly, so it can't be statically
@@ -28,10 +29,27 @@ export default async function Dashboard() {
   );
   const activePlan = planRows[0] ?? null;
 
+  const today = new Date().toISOString().slice(0, 10);
+  let todayRecommendation: any = null;
+  if (activePlan) {
+    const [{ rows: recoveryRows }, { rows: todayWorkoutRows }] = await Promise.all([
+      pool.query("select recovery_score from recovery_days where date = $1", [today]),
+      pool.query(
+        `select title, structure from planned_workouts where plan_id = $1 and scheduled_date = $2 limit 1`,
+        [activePlan.id, today]
+      ),
+    ]);
+    if (recoveryRows.length > 0) {
+      todayRecommendation = getDailyRecommendation(
+        Number(recoveryRows[0].recovery_score),
+        todayWorkoutRows[0] ?? null
+      );
+    }
+  }
+
   let thisWeekWorkouts: any[] = [];
   let recentCompletedWorkouts: any[] = [];
   if (activePlan) {
-    const today = new Date().toISOString().slice(0, 10);
     const { rows: currentWeekRow } = await pool.query(
       `select week_number, phase from planned_workouts
        where plan_id = $1 and scheduled_date <= $2
@@ -57,6 +75,26 @@ export default async function Dashboard() {
   return (
     <main style={{ padding: 24, fontFamily: "sans-serif" }}>
       <h1>Apex</h1>
+
+      {activePlan && (
+        <section style={{ border: "2px solid #333", padding: 16, borderRadius: 8, marginBottom: 16 }}>
+          <h2>Today</h2>
+          {todayRecommendation ? (
+            <p>
+              <strong>
+                {todayRecommendation.band === "green" && "🟢"}
+                {todayRecommendation.band === "yellow" && "🟡"}
+                {todayRecommendation.band === "red" && "🔴"}{" "}
+                Recovery: {todayRecommendation.recoveryScore}%
+              </strong>
+              <br />
+              {todayRecommendation.message}
+            </p>
+          ) : (
+            <p>No WHOOP recovery synced for today yet.</p>
+          )}
+        </section>
+      )}
 
       <section>
         <h2>Connections</h2>
