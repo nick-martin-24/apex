@@ -2,6 +2,7 @@ import { pool } from "@/lib/db";
 import { getToken } from "@/lib/tokens";
 import { getDailyRecommendation } from "@/lib/recommendation";
 import PlanForm from "./PlanForm";
+import WeekTabs from "./WeekTabs";
 
 // This page hits the database directly, so it can't be statically
 // pre-rendered at build time — force it to run per-request instead.
@@ -43,7 +44,9 @@ export default async function Dashboard() {
   let todayWorkout: any = null;
   let weekTiles: Array<{ date: string; dayName: string; isToday: boolean; workout: any | null }> = [];
   let weekLabel = "";
+  let currentWeekNumber = 1;
   let recentCompletedWorkouts: any[] = [];
+  let allWeeks: Array<{ weekNumber: number; phase: string; workouts: any[] }> = [];
 
   if (activePlan) {
     // Monday of the current calendar week — plan start_date is required to be
@@ -82,6 +85,7 @@ export default async function Dashboard() {
 
     if (weekWorkouts.length > 0) {
       weekLabel = `${weekWorkouts[0].phase} · week ${weekWorkouts[0].week_number}/${activePlan.duration_weeks}`;
+      currentWeekNumber = weekWorkouts[0].week_number;
     }
 
     const { rows: completedRows } = await pool.query(
@@ -91,6 +95,20 @@ export default async function Dashboard() {
       [activePlan.id]
     );
     recentCompletedWorkouts = completedRows;
+
+    const { rows: everyWorkout } = await pool.query(
+      `select week_number, phase, day_offset, title, target_duration_min, completed_activity_id
+       from planned_workouts where plan_id = $1 order by scheduled_date asc`,
+      [activePlan.id]
+    );
+    const grouped = new Map<number, { weekNumber: number; phase: string; workouts: any[] }>();
+    for (const w of everyWorkout) {
+      if (!grouped.has(w.week_number)) {
+        grouped.set(w.week_number, { weekNumber: w.week_number, phase: w.phase, workouts: [] });
+      }
+      grouped.get(w.week_number)!.workouts.push(w);
+    }
+    allWeeks = Array.from(grouped.values()).sort((a, b) => a.weekNumber - b.weekNumber);
   }
 
   return (
@@ -162,8 +180,9 @@ export default async function Dashboard() {
             </div>
             <div className="week-strip">
               {weekTiles.map((tile) => (
-                <div
+                
                   key={tile.date}
+                  href={`/dashboard/day/${tile.date}`}
                   className={`day-tile ${tile.isToday ? "today" : ""} ${!tile.workout ? "rest" : ""}`}
                 >
                   {tile.workout?.completed_activity_id && <span className="day-check">✅</span>}
@@ -182,10 +201,14 @@ export default async function Dashboard() {
                       Rest
                     </div>
                   )}
-                </div>
+                </a>
               ))}
             </div>
           </div>
+
+          {allWeeks.length > 0 && (
+            <WeekTabs weeks={allWeeks} planStartDate={fmtDate(activePlan.start_date)} currentWeekNumber={currentWeekNumber} />
+          )}
         </>
       ) : (
         <div className="today-card">
