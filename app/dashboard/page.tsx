@@ -29,6 +29,7 @@ export default async function Dashboard() {
   const activePlan = planRows[0] ?? null;
 
   let thisWeekWorkouts: any[] = [];
+  let recentCompletedWorkouts: any[] = [];
   if (activePlan) {
     const today = new Date().toISOString().slice(0, 10);
     const { rows: currentWeekRow } = await pool.query(
@@ -43,6 +44,14 @@ export default async function Dashboard() {
       [activePlan.id, weekNumber]
     );
     thisWeekWorkouts = rows;
+
+    const { rows: completedRows } = await pool.query(
+      `select * from planned_workouts
+       where plan_id = $1 and completed_activity_id is not null
+       order by scheduled_date desc limit 10`,
+      [activePlan.id]
+    );
+    recentCompletedWorkouts = completedRows;
   }
 
   return (
@@ -98,6 +107,17 @@ export default async function Dashboard() {
                   )}
                 </li>
               ))}
+            </ul>
+
+            <h3>Recently completed</h3>
+            <ul>
+              {recentCompletedWorkouts.map((w) => (
+                <li key={w.id}>
+                  [{w.phase}] {w.scheduled_date?.toISOString?.().slice(0, 10)} — <strong>{w.title}</strong> — ✅{" "}
+                  <a href={`/api/plans/workouts/${w.id}/compliance`}>view compliance</a>
+                </li>
+              ))}
+              {recentCompletedWorkouts.length === 0 && <li>No completed workouts linked yet.</li>}
             </ul>
           </div>
         ) : (
