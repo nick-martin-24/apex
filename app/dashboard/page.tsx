@@ -88,7 +88,14 @@ export default async function Dashboard() {
                 <li key={w.id}>
                   [{w.phase}] {w.scheduled_date?.toISOString?.().slice(0, 10)} — <strong>{w.title}</strong> —{" "}
                   {w.target_duration_min}min, ~{w.target_tss} TSS
-                  {w.completed_activity_id ? " ✅" : ""}
+                  {w.completed_activity_id ? (
+                    <>
+                      {" "}
+                      ✅ <a href={`/api/plans/workouts/${w.id}/compliance`}>view compliance</a>
+                    </>
+                  ) : (
+                    ""
+                  )}
                 </li>
               ))}
             </ul>
