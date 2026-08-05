@@ -87,7 +87,9 @@ export default async function Dashboard() {
 
     if (weekWorkouts.length > 0) {
       const weekTotalTss = weekWorkouts.reduce((sum: number, w: any) => sum + (w.target_tss ?? 0), 0);
-      weekLabel = `${weekWorkouts[0].phase} · week ${weekWorkouts[0].week_number}/${activePlan.duration_weeks} · ${weekTotalTss} TSS`;
+      const weekTotalMin = weekWorkouts.reduce((sum: number, w: any) => sum + (w.target_duration_min ?? 0), 0);
+      const weekTotalHrs = (weekTotalMin / 60).toFixed(1);
+      weekLabel = `${weekWorkouts[0].phase} · week ${weekWorkouts[0].week_number}/${activePlan.duration_weeks} · ${weekTotalHrs}h · ${weekTotalTss} TSS`;
       currentWeekNumber = weekWorkouts[0].week_number;
     }
 
@@ -197,7 +199,9 @@ export default async function Dashboard() {
                         style={{ background: zoneColorVar(tile.workout.title) }}
                       />
                       <div className="day-label">{tile.workout.title}</div>
-                      <div className="day-dur mono">{tile.workout.target_duration_min}min</div>
+                      <div className="day-dur mono">
+                        {tile.workout.target_duration_min}min · {tile.workout.target_tss} TSS
+                      </div>
                     </>
                   ) : (
                     <div className="day-label" style={{ color: "var(--text-muted)" }}>

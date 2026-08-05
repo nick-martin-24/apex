@@ -56,12 +56,30 @@ const PHASE_TYPE_PREFERENCE: Record<Phase, KeyWorkoutType[]> = {
 // weeks and taper, filtered to what's allowed.
 const LIGHT_TO_HEAVY: KeyWorkoutType[] = ["sweetspot", "tempo", "threshold", "vo2max", "sprints"];
 
-function round(n: number): number {
-  return Math.round(n);
+// Progression stages per type: each successive real occurrence of that type
+// in the plan steps to the next entry (clamped at the last once exhausted).
+// This is what keeps the ramp gradual regardless of how often a type is
+// scheduled — a type used every 4th key session still only advances one
+// small step each time it actually recurs, instead of jumping based on how
+// far along the calendar happens to be.
+const SWEETSPOT_STAGES: Array<[number, number]> = [
+  [3, 8], [3, 9], [3, 10], [4, 10], [4, 11], [4, 12], [4, 13],
+]; // [reps, onMin]
+const THRESHOLD_STAGES: Array<[number, number]> = [
+  [2, 12], [2, 14], [2, 16], [3, 16], [3, 17], [3, 18], [3, 20],
+];
+const VO2MAX_STAGES: Array<[number, number]> = [
+  [4, 3], [4, 4], [5, 4], [5, 5], [6, 5], [6, 6], [6, 7],
+];
+const SPRINTS_STAGES: number[] = [4, 5, 6, 6, 7, 8, 8]; // reps, onSec fixed at 30
+const TEMPO_STAGES: number[] = [20, 25, 30, 35, 40, 45, 50]; // minutes
+
+function stageAt<T>(stages: T[], occurrenceIdx: number): T {
+  return stages[Math.min(occurrenceIdx, stages.length - 1)];
 }
 
-function lerp(start: number, end: number, frac: number): number {
-  return round(start + (end - start) * frac);
+function round(n: number): number {
+  return Math.round(n);
 }
 
 function poolForPhase(phase: Phase, allowedTypes: KeyWorkoutType[]): KeyWorkoutType[] {
@@ -201,32 +219,40 @@ function ftpTest(dayOffset: number): WorkoutTemplate {
   };
 }
 
-// Generates a specific type at a given progression fraction (0-1) and
+// Generates a specific type at a given occurrence index (how many times this
+// type has already appeared earlier in the plan — NOT calendar position) and
 // intensity scale (used to lighten 2nd+ key sessions and recovery weeks).
-function generateByType(type: KeyWorkoutType, dayOffset: number, frac: number, intensityScale: number): WorkoutTemplate {
+function generateByType(
+  type: KeyWorkoutType,
+  dayOffset: number,
+  occurrenceIdx: number,
+  intensityScale: number
+): WorkoutTemplate {
   switch (type) {
     case "sweetspot": {
-      const reps = round(lerp(3, 4, frac) * intensityScale) || 2;
-      const onMin = lerp(8, 12, frac);
-      return sweetSpot(dayOffset, Math.max(reps, 2), onMin);
+      const [baseReps, onMin] = stageAt(SWEETSPOT_STAGES, occurrenceIdx);
+      const reps = Math.max(round(baseReps * intensityScale), 2);
+      return sweetSpot(dayOffset, reps, onMin);
     }
     case "threshold": {
-      const reps = round(lerp(2, 3, frac) * intensityScale) || 2;
-      const onMin = lerp(12, 18, frac);
-      return threshold(dayOffset, Math.max(reps, 2), onMin);
+      const [baseReps, onMin] = stageAt(THRESHOLD_STAGES, occurrenceIdx);
+      const reps = Math.max(round(baseReps * intensityScale), 2);
+      return threshold(dayOffset, reps, onMin);
     }
     case "vo2max": {
-      const reps = round(lerp(4, 6, frac) * intensityScale) || 3;
-      const onMin = lerp(3, 5, frac);
-      return vo2max(dayOffset, Math.max(reps, 3), onMin);
+      const [baseReps, onMin] = stageAt(VO2MAX_STAGES, occurrenceIdx);
+      const reps = Math.max(round(baseReps * intensityScale), 3);
+      return vo2max(dayOffset, reps, onMin);
     }
     case "sprints": {
-      const reps = round(lerp(5, 8, frac) * intensityScale) || 4;
-      return sprints(dayOffset, Math.max(reps, 4), 30);
+      const baseReps = stageAt(SPRINTS_STAGES, occurrenceIdx);
+      const reps = Math.max(round(baseReps * intensityScale), 4);
+      return sprints(dayOffset, reps, 30);
     }
     case "tempo": {
-      const minutes = round(lerp(30, 45, frac) * intensityScale) || 20;
-      return tempo(dayOffset, Math.max(minutes, 20));
+      const baseMinutes = stageAt(TEMPO_STAGES, occurrenceIdx);
+      const minutes = Math.max(round(baseMinutes * intensityScale), 20);
+      return tempo(dayOffset, minutes);
     }
   }
 }
@@ -293,20 +319,22 @@ function isRecoveryWeek(weekNumber: number, durationWeeks: number): boolean {
 }
 
 // Builds one key workout. Type comes from the phase's (allowed-filtered)
-// rotation pool, but progression magnitude (reps/duration) is driven by a
-// GLOBAL fraction across the whole plan rather than resetting at each phase
-// boundary. On a recovery week, type drops to the lightest allowed option
-// and volume is pulled back — real progressive-overload plans step back
-// periodically rather than ramping every single week without a break.
+// rotation pool. Progression magnitude (reps/duration) is driven by that
+// TYPE's own occurrence count so far in the plan (see occurrenceCounts),
+// not calendar position — this is what keeps a type's ramp gradual even
+// when it only shows up occasionally. On a recovery week, type drops to the
+// lightest allowed option, uses its current (not advanced) occurrence stage,
+// and volume is pulled back further — real progressive-overload plans step
+// back periodically rather than ramping every single week without a break.
 function buildKeyWorkout(
   phase: Phase,
   weekNumber: number,
-  globalFrac: number,
   isRecovery: boolean,
   keyIndex: number,
   keyWorkoutsPerWeek: number,
   dayOffset: number,
-  allowedTypes: KeyWorkoutType[]
+  allowedTypes: KeyWorkoutType[],
+  occurrenceCounts: Record<KeyWorkoutType, number>
 ): WorkoutTemplate {
   if (phase === "taper") {
     return generateTaperByType(lightType(allowedTypes), dayOffset);
@@ -324,7 +352,13 @@ function buildKeyWorkout(
   let intensityScale = keyIndex === 0 ? 1 : 0.85;
   if (isRecovery) intensityScale *= 0.65;
 
-  return generateByType(type, dayOffset, globalFrac, intensityScale);
+  // Recovery-week appearances read the type's current stage but don't
+  // advance it — they're a step back, not part of the forward progression.
+  const occurrenceIdx = occurrenceCounts[type];
+  const workout = generateByType(type, dayOffset, occurrenceIdx, intensityScale);
+  if (!isRecovery) occurrenceCounts[type] = occurrenceIdx + 1;
+
+  return workout;
 }
 
 // Given filler (zone 2) days for a week and the total minutes already
@@ -370,6 +404,13 @@ export function buildFtpBuilderTemplate(
   const { keyDays, fillerDays } = assignDays(keyWorkoutsPerWeek, ridesPerWeek);
   const weeks: WeekTemplate[] = [];
   let weekNumber = 1;
+  const occurrenceCounts: Record<KeyWorkoutType, number> = {
+    sweetspot: 0,
+    tempo: 0,
+    threshold: 0,
+    vo2max: 0,
+    sprints: 0,
+  };
 
   const phaseSequence: Array<{ phase: Phase; count: number }> = [
     { phase: "base", count: base },
@@ -392,21 +433,17 @@ export function buildFtpBuilderTemplate(
         }
       } else {
         const recoveryWeek = isRecoveryWeek(weekNumber, durationWeeks);
-        // Global progression fraction across the WHOLE plan (excluding the
-        // final taper/test week), so ramping continues smoothly across phase
-        // boundaries instead of resetting each time the workout type changes.
-        const globalFrac = durationWeeks <= 2 ? 1 : (weekNumber - 1) / (durationWeeks - 2);
 
         const keyWorkouts = keyDays.map((d, i) =>
           buildKeyWorkout(
             phase,
             weekNumber,
-            Math.min(globalFrac, 1),
             recoveryWeek,
             i,
             keyWorkoutsPerWeek,
             d,
-            safeAllowedTypes
+            safeAllowedTypes,
+            occurrenceCounts
           )
         );
         const keyMinutesTotal = keyWorkouts.reduce((sum, w) => sum + w.targetDurationMin, 0);

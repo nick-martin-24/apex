@@ -59,6 +59,8 @@ export default function WeekTabs({
   const activeWeek = weeks.find((w) => w.weekNumber === selected);
   const weekStartDate = addDays(planStartDate, (selected - 1) * 7);
   const activeWeekTss = activeWeek?.workouts.reduce((sum, w) => sum + (w.target_tss ?? 0), 0) ?? 0;
+  const activeWeekMin = activeWeek?.workouts.reduce((sum, w) => sum + (w.target_duration_min ?? 0), 0) ?? 0;
+  const activeWeekHrs = (activeWeekMin / 60).toFixed(1);
 
   return (
     <div className="week-section">
@@ -66,7 +68,7 @@ export default function WeekTabs({
         <span className="week-title">Plan overview</span>
         {activeWeek && (
           <span className="week-phase mono">
-            {activeWeek.phase} · {activeWeekTss} TSS
+            {activeWeek.phase} · {activeWeekHrs}h · {activeWeekTss} TSS
           </span>
         )}
       </div>
@@ -98,7 +100,9 @@ export default function WeekTabs({
                   <>
                     <div className="day-zone-bar" style={{ background: zoneColorVar(workout.title) }} />
                     <div className="day-label">{workout.title}</div>
-                    <div className="day-dur mono">{workout.target_duration_min}min</div>
+                    <div className="day-dur mono">
+                      {workout.target_duration_min}min · {workout.target_tss} TSS
+                    </div>
                   </>
                 ) : (
                   <div className="day-label" style={{ color: "var(--text-muted)" }}>
