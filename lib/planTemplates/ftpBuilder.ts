@@ -181,7 +181,48 @@ function buildKeyWorkout(
   return threshold(dayOffset, 2, 8);
 }
 
-export function buildFtpBuilderTemplate(durationWeeks: number, keyWorkoutsPerWeek: number): WeekTemplate[] {
+// Given filler (zone 2) days for a week and the total minutes already
+// committed to key workouts, sizes each filler ride to hit the target
+// weekly volume. The last filler day (usually Sunday) gets ~45% of the
+// remaining time as the "long ride"; if there's an earlier filler day too,
+// it becomes a recovery spin (outside taper, where everything stays easy).
+function buildFillerWorkouts(
+  fillerDays: number[],
+  targetWeeklyMinutes: number,
+  keyMinutesTotal: number,
+  phase: "base" | "build" | "peak" | "taper"
+): WorkoutTemplate[] {
+  if (fillerDays.length === 0) return [];
+
+  const remaining = Math.max(targetWeeklyMinutes - keyMinutesTotal, fillerDays.length * 30);
+  const longDay = fillerDays[fillerDays.length - 1];
+  const otherDays = fillerDays.slice(0, -1);
+
+  if (otherDays.length === 0) {
+    return [endurance(longDay, remaining)];
+  }
+
+  const longMinutes = Math.round(remaining * 0.45);
+  const otherTotal = remaining - longMinutes;
+  const perOtherDay = Math.round(otherTotal / otherDays.length);
+
+  const workouts: WorkoutTemplate[] = [];
+  otherDays.forEach((d, i) => {
+    if (i === 0 && phase !== "taper") {
+      workouts.push(recovery(d));
+    } else {
+      workouts.push(endurance(d, Math.max(perOtherDay, 30)));
+    }
+  });
+  workouts.push(endurance(longDay, Math.max(longMinutes, 45)));
+  return workouts;
+}
+
+export function buildFtpBuilderTemplate(
+  durationWeeks: number,
+  keyWorkoutsPerWeek: number,
+  targetWeeklyHours: number
+): WeekTemplate[] {
   const { base, build, peak, taper } = allocatePhases(durationWeeks);
   const { keyDays, fillerDays } = assignDays(keyWorkoutsPerWeek);
   const weeks: WeekTemplate[] = [];
@@ -207,17 +248,10 @@ export function buildFtpBuilderTemplate(durationWeeks: number, keyWorkoutsPerWee
           workouts.push(recovery(d));
         }
       } else {
-        keyDays.forEach((d, i) => workouts.push(buildKeyWorkout(phase, i, d, weekIdx, count)));
-        fillerDays.forEach((d, i) => {
-          // Make the last filler day (typically Sunday) the longer ride
-          const isLongDay = i === fillerDays.length - 1;
-          if (!isLongDay && i === 0 && phase !== "taper") {
-            workouts.push(recovery(d));
-          } else {
-            const minutes = isLongDay ? 90 + weekIdx * 5 : 60;
-            workouts.push(endurance(d, minutes));
-          }
-        });
+        const keyWorkouts = keyDays.map((d, i) => buildKeyWorkout(phase, i, d, weekIdx, count));
+        const keyMinutesTotal = keyWorkouts.reduce((sum, w) => sum + w.targetDurationMin, 0);
+        const fillerWorkouts = buildFillerWorkouts(fillerDays, targetWeeklyHours * 60, keyMinutesTotal, phase);
+        workouts.push(...keyWorkouts, ...fillerWorkouts);
       }
 
       weeks.push({ weekNumber, phase, workouts });

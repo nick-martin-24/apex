@@ -9,6 +9,7 @@ export default function PlanForm({ currentFtp }: { currentFtp: number | null }) 
   const [startDate, setStartDate] = useState(nextMonday());
   const [durationWeeks, setDurationWeeks] = useState("10");
   const [keyWorkoutsPerWeek, setKeyWorkoutsPerWeek] = useState("2");
+  const [targetWeeklyHours, setTargetWeeklyHours] = useState("6");
   const [planStatus, setPlanStatus] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -35,6 +36,7 @@ export default function PlanForm({ currentFtp }: { currentFtp: number | null }) 
         start_date: startDate,
         duration_weeks: Number(durationWeeks),
         key_workouts_per_week: Number(keyWorkoutsPerWeek),
+        target_weekly_hours: Number(targetWeeklyHours),
       }),
     });
     const data = await res.json();
@@ -114,6 +116,21 @@ export default function PlanForm({ currentFtp }: { currentFtp: number | null }) 
               <option value="3">3</option>
               <option value="4">4</option>
             </select>
+          </label>
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <label>
+            Target hours / week:{" "}
+            <input
+              type="number"
+              value={targetWeeklyHours}
+              onChange={(e) => setTargetWeeklyHours(e.target.value)}
+              min={2}
+              max={20}
+              step={0.5}
+              required
+              style={{ width: 60 }}
+            />
           </label>
         </div>
         <button type="submit" disabled={submitting}>
