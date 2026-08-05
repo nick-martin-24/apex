@@ -8,12 +8,15 @@ export function getRecoveryBand(recoveryScore: number): RecoveryBand {
 }
 
 // A workout counts as "key" (hard) if its structure includes an interval
-// segment at sweet-spot intensity or above (>=88% FTP), or an FTP test.
-// Steady/endurance/recovery-only workouts are "easy".
+// segment at sweet-spot intensity or above (>=88% FTP), a tempo-or-harder
+// steady effort (>=76% FTP), or an FTP test. Easy endurance/recovery rides
+// don't qualify.
 export function isKeyWorkout(structure: any[]): boolean {
   return structure.some(
     (seg) =>
-      (seg.type === "interval" && seg.on_pct_ftp?.[0] >= 88) || seg.type === "test"
+      (seg.type === "interval" && seg.on_pct_ftp?.[0] >= 88) ||
+      (seg.type === "steady" && seg.pct_ftp?.[0] >= 76) ||
+      seg.type === "test"
   );
 }
 

@@ -13,9 +13,11 @@ const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 function zoneColorVar(title: string): string {
   if (title.startsWith("Recovery")) return "var(--z1)";
   if (title.startsWith("Endurance")) return "var(--z2)";
-  if (title.startsWith("Sweet spot")) return "var(--z3)";
+  if (title.startsWith("Tempo")) return "var(--z3)";
+  if (title.startsWith("Sweet spot")) return "var(--z4)";
   if (title.startsWith("Threshold")) return "var(--z4)";
   if (title.startsWith("VO2max")) return "var(--z5)";
+  if (title.startsWith("Sprints")) return "var(--z7)";
   if (title.startsWith("FTP test")) return "var(--z6)";
   return "var(--z1)";
 }
