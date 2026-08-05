@@ -6,7 +6,7 @@ export default function PlanForm({ currentFtp }: { currentFtp: number | null }) 
   const [ftp, setFtp] = useState(currentFtp ? String(currentFtp) : "");
   const [ftpStatus, setFtpStatus] = useState<string | null>(null);
 
-  const [startDate, setStartDate] = useState("");
+  const [startDate, setStartDate] = useState(nextMonday());
   const [durationWeeks, setDurationWeeks] = useState("10");
   const [keyWorkoutsPerWeek, setKeyWorkoutsPerWeek] = useState("2");
   const [planStatus, setPlanStatus] = useState<string | null>(null);
@@ -85,7 +85,7 @@ export default function PlanForm({ currentFtp }: { currentFtp: number | null }) 
             Start date (Monday):{" "}
             <input
               type="date"
-              value={startDate || nextMonday()}
+              value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               required
             />
