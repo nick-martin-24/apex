@@ -180,7 +180,7 @@ export default async function Dashboard() {
             </div>
             <div className="week-strip">
               {weekTiles.map((tile) => (
-                
+                <a
                   key={tile.date}
                   href={`/dashboard/day/${tile.date}`}
                   className={`day-tile ${tile.isToday ? "today" : ""} ${!tile.workout ? "rest" : ""}`}
