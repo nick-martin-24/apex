@@ -1,3 +1,5 @@
+import { computeTargetTss } from "../tss";
+
 // FTP-building plan generator, parameterized by:
 //   - durationWeeks: total plan length the user wants
 //   - keyWorkoutsPerWeek: how many quality interval sessions per week (1-4)
@@ -60,83 +62,89 @@ function lerp(start: number, end: number, frac: number): number {
 // ---------- Workout generators ----------
 
 function endurance(dayOffset: number, minutes: number): WorkoutTemplate {
+  const structure = [{ type: "steady", min: minutes, pct_ftp: [55, 75] }];
   return {
     dayOffset,
     title: "Endurance ride",
     description: `${minutes} min steady zone 2 (55-75% FTP), conversational pace.`,
     targetDurationMin: minutes,
-    targetTss: round(minutes * 0.6),
-    structure: [{ type: "steady", min: minutes, pct_ftp: [55, 75] }],
+    targetTss: computeTargetTss(structure),
+    structure,
   };
 }
 
 function recovery(dayOffset: number): WorkoutTemplate {
+  const structure = [{ type: "steady", min: 35, pct_ftp: [40, 55] }];
   return {
     dayOffset,
     title: "Recovery spin",
     description: "30-40min easy spin, well below zone 2, legs-only effort.",
     targetDurationMin: 35,
-    targetTss: 20,
-    structure: [{ type: "steady", min: 35, pct_ftp: [40, 55] }],
+    targetTss: computeTargetTss(structure),
+    structure,
   };
 }
 
 function tempo(dayOffset: number, minutes: number): WorkoutTemplate {
+  const structure = [{ type: "steady", min: minutes, pct_ftp: [76, 90] }];
   return {
     dayOffset,
     title: "Tempo",
     description: `${minutes} min @ 76-90% FTP tempo pace — harder than endurance, short of threshold.`,
     targetDurationMin: minutes,
-    targetTss: round(minutes * 0.75),
-    structure: [{ type: "steady", min: minutes, pct_ftp: [76, 90] }],
+    targetTss: computeTargetTss(structure),
+    structure,
   };
 }
 
 function sweetSpot(dayOffset: number, reps: number, onMin: number): WorkoutTemplate {
   const totalMin = 15 + reps * (onMin + 5) + 10;
+  const structure = [
+    { type: "warmup", min: 15 },
+    { type: "interval", reps, on_min: onMin, on_pct_ftp: [88, 94], off_min: 5, off_pct_ftp: 50 },
+    { type: "cooldown", min: 10 },
+  ];
   return {
     dayOffset,
     title: `Sweet spot ${reps}x${onMin}min`,
     description: `Warm up 15min, ${reps} x ${onMin}min @ 88-94% FTP with 5min easy spin recovery between, cool down 10min.`,
     targetDurationMin: totalMin,
-    targetTss: round(reps * onMin * 1.0 + totalMin * 0.15),
-    structure: [
-      { type: "warmup", min: 15 },
-      { type: "interval", reps, on_min: onMin, on_pct_ftp: [88, 94], off_min: 5, off_pct_ftp: 50 },
-      { type: "cooldown", min: 10 },
-    ],
+    targetTss: computeTargetTss(structure),
+    structure,
   };
 }
 
 function threshold(dayOffset: number, reps: number, onMin: number): WorkoutTemplate {
   const totalMin = 15 + reps * (onMin + 5) + 10;
+  const structure = [
+    { type: "warmup", min: 15 },
+    { type: "interval", reps, on_min: onMin, on_pct_ftp: [95, 105], off_min: 5, off_pct_ftp: 50 },
+    { type: "cooldown", min: 10 },
+  ];
   return {
     dayOffset,
     title: `Threshold ${reps}x${onMin}min`,
     description: `Warm up 15min, ${reps} x ${onMin}min @ 95-105% FTP with 5min easy spin recovery between, cool down 10min.`,
     targetDurationMin: totalMin,
-    targetTss: round(reps * onMin * 1.05 + totalMin * 0.15),
-    structure: [
-      { type: "warmup", min: 15 },
-      { type: "interval", reps, on_min: onMin, on_pct_ftp: [95, 105], off_min: 5, off_pct_ftp: 50 },
-      { type: "cooldown", min: 10 },
-    ],
+    targetTss: computeTargetTss(structure),
+    structure,
   };
 }
 
 function vo2max(dayOffset: number, reps: number, onMin: number): WorkoutTemplate {
   const totalMin = 20 + reps * (onMin + onMin) + 10;
+  const structure = [
+    { type: "warmup", min: 20 },
+    { type: "interval", reps, on_min: onMin, on_pct_ftp: [106, 120], off_min: onMin, off_pct_ftp: 50 },
+    { type: "cooldown", min: 10 },
+  ];
   return {
     dayOffset,
     title: `VO2max ${reps}x${onMin}min`,
     description: `Warm up 20min with openers, ${reps} x ${onMin}min @ 106-120% FTP with equal-time easy spin recovery, cool down 10min.`,
     targetDurationMin: totalMin,
-    targetTss: round(reps * onMin * 1.15 + totalMin * 0.15),
-    structure: [
-      { type: "warmup", min: 20 },
-      { type: "interval", reps, on_min: onMin, on_pct_ftp: [106, 120], off_min: onMin, off_pct_ftp: 50 },
-      { type: "cooldown", min: 10 },
-    ],
+    targetTss: computeTargetTss(structure),
+    structure,
   };
 }
 
@@ -144,33 +152,35 @@ function sprints(dayOffset: number, reps: number, onSec: number): WorkoutTemplat
   const onMin = onSec / 60;
   const offMin = 4.5;
   const totalMin = round(20 + reps * (onMin + offMin) + 10);
+  const structure = [
+    { type: "warmup", min: 20 },
+    { type: "interval", reps, on_min: onMin, on_pct_ftp: [150, 180], off_min: offMin, off_pct_ftp: 40 },
+    { type: "cooldown", min: 10 },
+  ];
   return {
     dayOffset,
     title: `Sprints ${reps}x${onSec}s`,
     description: `Warm up 20min with openers, ${reps} x ${onSec}s all-out (150-180% FTP) with ${offMin}min full recovery between, cool down 10min.`,
     targetDurationMin: totalMin,
-    targetTss: round(reps * onMin * 1.6 + totalMin * 0.15),
-    structure: [
-      { type: "warmup", min: 20 },
-      { type: "interval", reps, on_min: onMin, on_pct_ftp: [150, 180], off_min: offMin, off_pct_ftp: 40 },
-      { type: "cooldown", min: 10 },
-    ],
+    targetTss: computeTargetTss(structure),
+    structure,
   };
 }
 
 function ftpTest(dayOffset: number): WorkoutTemplate {
+  const structure = [
+    { type: "warmup", min: 20 },
+    { type: "test", protocol: "20min_ftp_test", min: 20 },
+    { type: "cooldown", min: 15 },
+  ];
   return {
     dayOffset,
     title: "FTP test",
     description:
       "Warm up 20min including 2x5min buildups. Then a 20min all-out sustained effort. Take 95% of average power as new FTP. Cool down 15min.",
     targetDurationMin: 60,
-    targetTss: 75,
-    structure: [
-      { type: "warmup", min: 20 },
-      { type: "test", protocol: "20min_ftp_test", min: 20 },
-      { type: "cooldown", min: 15 },
-    ],
+    targetTss: computeTargetTss(structure),
+    structure,
   };
 }
 
