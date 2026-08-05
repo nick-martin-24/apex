@@ -86,7 +86,8 @@ export default async function Dashboard() {
     }));
 
     if (weekWorkouts.length > 0) {
-      weekLabel = `${weekWorkouts[0].phase} · week ${weekWorkouts[0].week_number}/${activePlan.duration_weeks}`;
+      const weekTotalTss = weekWorkouts.reduce((sum: number, w: any) => sum + (w.target_tss ?? 0), 0);
+      weekLabel = `${weekWorkouts[0].phase} · week ${weekWorkouts[0].week_number}/${activePlan.duration_weeks} · ${weekTotalTss} TSS`;
       currentWeekNumber = weekWorkouts[0].week_number;
     }
 
@@ -99,7 +100,7 @@ export default async function Dashboard() {
     recentCompletedWorkouts = completedRows;
 
     const { rows: everyWorkout } = await pool.query(
-      `select week_number, phase, day_offset, title, target_duration_min, completed_activity_id
+      `select week_number, phase, day_offset, title, target_duration_min, target_tss, completed_activity_id
        from planned_workouts where plan_id = $1 order by scheduled_date asc`,
       [activePlan.id]
     );
@@ -291,8 +292,9 @@ export default async function Dashboard() {
         {activePlan && (
           <p className="form-status">
             Active: {activePlan.type} · started {fmtDate(activePlan.start_date)} · {activePlan.duration_weeks}{" "}
-            weeks · {activePlan.key_workouts_per_week} key workouts/week · ~{activePlan.target_weekly_hours}
-            h/week
+            weeks · {activePlan.key_workouts_per_week} key / {activePlan.rides_per_week ?? 4} rides per week · ~
+            {activePlan.target_weekly_hours}h/week
+            {activePlan.allowed_types && ` · types: ${(activePlan.allowed_types as string[]).join(", ")}`}
           </p>
         )}
       </details>

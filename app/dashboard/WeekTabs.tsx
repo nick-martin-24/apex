@@ -6,6 +6,7 @@ interface WorkoutSummary {
   day_offset: number;
   title: string;
   target_duration_min: number;
+  target_tss: number;
   completed_activity_id: string | null;
 }
 
@@ -57,12 +58,17 @@ export default function WeekTabs({
 
   const activeWeek = weeks.find((w) => w.weekNumber === selected);
   const weekStartDate = addDays(planStartDate, (selected - 1) * 7);
+  const activeWeekTss = activeWeek?.workouts.reduce((sum, w) => sum + (w.target_tss ?? 0), 0) ?? 0;
 
   return (
     <div className="week-section">
       <div className="week-header">
         <span className="week-title">Plan overview</span>
-        {activeWeek && <span className="week-phase mono">{activeWeek.phase}</span>}
+        {activeWeek && (
+          <span className="week-phase mono">
+            {activeWeek.phase} · {activeWeekTss} TSS
+          </span>
+        )}
       </div>
 
       <div className="week-tabs">

@@ -2,6 +2,15 @@
 
 import { useState } from "react";
 
+const TYPE_LABELS: Record<string, string> = {
+  sweetspot: "Sweet spot",
+  tempo: "Tempo",
+  threshold: "Threshold",
+  vo2max: "VO2max",
+  sprints: "Sprints",
+};
+const ALL_TYPES = Object.keys(TYPE_LABELS);
+
 export default function PlanForm({ currentFtp }: { currentFtp: number | null }) {
   const [ftp, setFtp] = useState(currentFtp ? String(currentFtp) : "");
   const [ftpStatus, setFtpStatus] = useState<string | null>(null);
@@ -10,6 +19,8 @@ export default function PlanForm({ currentFtp }: { currentFtp: number | null }) 
   const [durationWeeks, setDurationWeeks] = useState("10");
   const [keyWorkoutsPerWeek, setKeyWorkoutsPerWeek] = useState("2");
   const [targetWeeklyHours, setTargetWeeklyHours] = useState("6");
+  const [ridesPerWeek, setRidesPerWeek] = useState("4");
+  const [allowedTypes, setAllowedTypes] = useState<Set<string>>(new Set(ALL_TYPES));
   const [planStatus, setPlanStatus] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -25,6 +36,18 @@ export default function PlanForm({ currentFtp }: { currentFtp: number | null }) 
     setFtpStatus(res.ok ? `FTP set to ${data.ftp_watts}W` : `Error: ${data.error}`);
   }
 
+  function toggleType(t: string) {
+    setAllowedTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(t)) {
+        if (next.size > 1) next.delete(t); // keep at least one selected
+      } else {
+        next.add(t);
+      }
+      return next;
+    });
+  }
+
   async function submitPlan(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -37,6 +60,8 @@ export default function PlanForm({ currentFtp }: { currentFtp: number | null }) 
         duration_weeks: Number(durationWeeks),
         key_workouts_per_week: Number(keyWorkoutsPerWeek),
         target_weekly_hours: Number(targetWeeklyHours),
+        rides_per_week: Number(ridesPerWeek),
+        allowed_types: Array.from(allowedTypes),
       }),
     });
     const data = await res.json();
@@ -109,6 +134,18 @@ export default function PlanForm({ currentFtp }: { currentFtp: number | null }) 
           </select>
         </label>
         <label>
+          Rides/wk
+          <input
+            type="number"
+            value={ridesPerWeek}
+            onChange={(e) => setRidesPerWeek(e.target.value)}
+            min={Number(keyWorkoutsPerWeek)}
+            max={7}
+            required
+            style={{ width: 50 }}
+          />
+        </label>
+        <label>
           Hours/wk target
           <input
             type="number"
@@ -121,6 +158,19 @@ export default function PlanForm({ currentFtp }: { currentFtp: number | null }) 
             style={{ width: 50 }}
           />
         </label>
+
+        <div>
+          <h4 style={{ marginBottom: 6 }}>Interval types allowed</h4>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px" }}>
+            {ALL_TYPES.map((t) => (
+              <label key={t} style={{ gap: 4 }}>
+                <input type="checkbox" checked={allowedTypes.has(t)} onChange={() => toggleType(t)} />
+                {TYPE_LABELS[t]}
+              </label>
+            ))}
+          </div>
+        </div>
+
         <div>
           <button type="submit" disabled={submitting}>
             {submitting ? "Creating..." : "Create plan"}
