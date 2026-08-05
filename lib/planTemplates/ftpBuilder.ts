@@ -4,9 +4,15 @@
 //   - targetWeeklyHours: total weekly training time to hit
 // Remaining ride days each week are filled with zone 2 endurance rides sized
 // to actually reach the weekly hour target (see buildFillerWorkouts).
-// Phases (base/build/peak/taper) are allocated proportionally to durationWeeks,
-// and each phase draws its key workouts from a rotating pool of workout types
-// so the plan isn't just one repeated interval shape for its entire length.
+//
+// Progression model: base/build/peak/taper labels still group weeks broadly
+// (they drive which workout TYPES are in rotation and are shown in the UI),
+// but interval progression itself (reps/duration) is driven by a single
+// global fraction across the whole plan, so ramping continues smoothly
+// across phase boundaries instead of resetting each time. Every 4th week
+// (once the plan is long enough to benefit) is a recovery/step-back week —
+// standard 3:1 build:recover periodization — with both reduced key-workout
+// volume and a reduced weekly-hour budget, not just lighter intensity.
 
 export interface WorkoutTemplate {
   dayOffset: number; // 0=Mon ... 6=Sun, days since that week's Monday
@@ -202,14 +208,20 @@ function assignDays(keyWorkoutsPerWeek: number) {
   return { keyDays, fillerDays };
 }
 
-// Builds one key workout: picks a type from the phase's rotation pool (varying
-// by both week and which key session of the week this is, so a plan doesn't
-// repeat the same shape every time), then generates it with duration/reps that
-// progress across the phase.
+// Builds one key workout. Type comes from the phase's rotation pool (varying
+// by week and which key session of the week this is), but progression magnitude
+// (reps/duration) is driven by a GLOBAL fraction across the whole plan rather
+// than resetting at each phase boundary — so a threshold session in week 6
+// picks up roughly where the sweet-spot progression in week 5 left off,
+// instead of starting back at the easiest version of the new type.
+// On a recovery week, the type is forced to something lighter and volume is
+// pulled back — real progressive-overload plans step back periodically
+// rather than ramping every single week without a break.
 function buildKeyWorkout(
   phase: Phase,
-  weekIdx: number,
-  totalWeeksInPhase: number,
+  weekNumber: number,
+  globalFrac: number,
+  isRecoveryWeek: boolean,
   keyIndex: number,
   keyWorkoutsPerWeek: number,
   dayOffset: number
@@ -218,38 +230,47 @@ function buildKeyWorkout(
     return threshold(dayOffset, 2, 8);
   }
 
-  const pool = PHASE_POOLS[phase];
-  const typeIdx = (weekIdx * keyWorkoutsPerWeek + keyIndex) % pool.length;
-  const type = pool[typeIdx];
+  let type: KeyWorkoutType;
+  if (isRecoveryWeek) {
+    // Recovery weeks stay at or below the phase's baseline effort — no
+    // VO2max/sprints, just enough stimulus to maintain without adding fatigue.
+    type = phase === "peak" ? "threshold" : "sweetspot";
+  } else {
+    const pool = PHASE_POOLS[phase];
+    const typeIdx = (weekNumber * keyWorkoutsPerWeek + keyIndex) % pool.length;
+    type = pool[typeIdx];
+  }
 
-  const frac = totalWeeksInPhase <= 1 ? 1 : weekIdx / (totalWeeksInPhase - 1);
   // Second/third+ key session of the week is a bit lighter than the first,
   // but not drastically scaled down now that types vary (no need to always
   // "protect" against two max-effort days when the types themselves differ).
-  const intensityScale = keyIndex === 0 ? 1 : 0.85;
+  let intensityScale = keyIndex === 0 ? 1 : 0.85;
+  // Recovery-week volume pullback — real coaches cut back meaningfully
+  // (roughly 30-40%) rather than just trimming the edges.
+  if (isRecoveryWeek) intensityScale *= 0.65;
 
   switch (type) {
     case "sweetspot": {
-      const reps = round(lerp(3, 4, frac) * intensityScale) || 2;
-      const onMin = lerp(8, 12, frac);
+      const reps = round(lerp(3, 4, globalFrac) * intensityScale) || 2;
+      const onMin = lerp(8, 12, globalFrac);
       return sweetSpot(dayOffset, Math.max(reps, 2), onMin);
     }
     case "threshold": {
-      const reps = round(lerp(2, 3, frac) * intensityScale) || 2;
-      const onMin = lerp(12, 18, frac);
+      const reps = round(lerp(2, 3, globalFrac) * intensityScale) || 2;
+      const onMin = lerp(12, 18, globalFrac);
       return threshold(dayOffset, Math.max(reps, 2), onMin);
     }
     case "vo2max": {
-      const reps = round(lerp(4, 6, frac) * intensityScale) || 3;
-      const onMin = lerp(3, 5, frac);
+      const reps = round(lerp(4, 6, globalFrac) * intensityScale) || 3;
+      const onMin = lerp(3, 5, globalFrac);
       return vo2max(dayOffset, Math.max(reps, 3), onMin);
     }
     case "sprints": {
-      const reps = round(lerp(5, 8, frac) * intensityScale) || 4;
+      const reps = round(lerp(5, 8, globalFrac) * intensityScale) || 4;
       return sprints(dayOffset, Math.max(reps, 4), 30);
     }
     case "tempo": {
-      const minutes = round(lerp(30, 45, frac) * intensityScale) || 20;
+      const minutes = round(lerp(30, 45, globalFrac) * intensityScale) || 20;
       return tempo(dayOffset, Math.max(minutes, 20));
     }
   }
@@ -293,6 +314,16 @@ function buildFillerWorkouts(
   });
 }
 
+// Every 4th week is a recovery/step-back week — standard 3:1 build:recover
+// periodization. Skipped for short plans (recovery weeks only kick in once
+// there's enough length to benefit), and never applied to the final
+// taper/test week, which already handles its own volume drop.
+function isRecoveryWeek(weekNumber: number, durationWeeks: number): boolean {
+  if (durationWeeks < 8) return false;
+  if (weekNumber >= durationWeeks) return false;
+  return weekNumber % 4 === 0;
+}
+
 export function buildFtpBuilderTemplate(
   durationWeeks: number,
   keyWorkoutsPerWeek: number,
@@ -323,11 +354,19 @@ export function buildFtpBuilderTemplate(
           workouts.push(recovery(d));
         }
       } else {
+        const recoveryWeek = isRecoveryWeek(weekNumber, durationWeeks);
+        // Global progression fraction across the WHOLE plan (excluding the
+        // final taper/test week), so ramping continues smoothly across phase
+        // boundaries instead of resetting each time the workout type changes.
+        const globalFrac = durationWeeks <= 2 ? 1 : (weekNumber - 1) / (durationWeeks - 2);
+
         const keyWorkouts = keyDays.map((d, i) =>
-          buildKeyWorkout(phase, weekIdx, count, i, keyWorkoutsPerWeek, d)
+          buildKeyWorkout(phase, weekNumber, Math.min(globalFrac, 1), recoveryWeek, i, keyWorkoutsPerWeek, d)
         );
         const keyMinutesTotal = keyWorkouts.reduce((sum, w) => sum + w.targetDurationMin, 0);
-        const fillerWorkouts = buildFillerWorkouts(fillerDays, targetWeeklyHours * 60, keyMinutesTotal, phase);
+        // Recovery weeks also pull back total weekly volume, not just intensity.
+        const weeklyMinuteBudget = targetWeeklyHours * 60 * (recoveryWeek ? 0.75 : 1);
+        const fillerWorkouts = buildFillerWorkouts(fillerDays, weeklyMinuteBudget, keyMinutesTotal, phase);
         workouts.push(...keyWorkouts, ...fillerWorkouts);
       }
 
