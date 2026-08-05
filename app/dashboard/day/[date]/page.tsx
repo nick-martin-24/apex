@@ -73,7 +73,7 @@ export default async function DayDetail({ params }: { params: { date: string } }
                 <div className="stat-label">Recovery</div>
               </div>
               <div className="stat">
-                <div className="stat-value mono">{recovery.hrv_ms ?? "—"}</div>
+                <div className="stat-value mono">{recovery.hrv_ms != null ? Math.round(recovery.hrv_ms) : "—"}</div>
                 <div className="stat-label">HRV (ms)</div>
               </div>
               <div className="stat">

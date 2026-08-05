@@ -254,7 +254,7 @@ export default async function Dashboard() {
               <li key={r.date}>
                 <span>{fmtDate(r.date)}</span>
                 <span className="muted">
-                  {r.recovery_score}% · HRV {r.hrv_ms}ms
+                  {r.recovery_score}% · HRV {r.hrv_ms != null ? Math.round(r.hrv_ms) : "—"}ms
                 </span>
               </li>
             ))}
