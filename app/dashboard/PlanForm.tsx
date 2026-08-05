@@ -60,83 +60,73 @@ export default function PlanForm({ currentFtp }: { currentFtp: number | null }) 
   }
 
   return (
-    <div style={{ display: "flex", gap: 40, flexWrap: "wrap", margin: "16px 0" }}>
-      <form onSubmit={submitFtp} style={{ border: "1px solid #ccc", padding: 16, borderRadius: 8 }}>
-        <h3>FTP</h3>
+    <div className="form-row">
+      <form onSubmit={submitFtp} className="field-group">
+        <h4>FTP</h4>
         <label>
-          Watts:{" "}
+          Watts
           <input
             type="number"
             value={ftp}
             onChange={(e) => setFtp(e.target.value)}
             required
             min={50}
-            style={{ width: 80 }}
+            style={{ width: 70 }}
           />
         </label>
-        <button type="submit" style={{ marginLeft: 8 }}>
-          Save
-        </button>
-        {ftpStatus && <p style={{ fontSize: 13, color: "#555" }}>{ftpStatus}</p>}
+        <div>
+          <button type="submit">Save</button>
+        </div>
+        {ftpStatus && <p className="form-status">{ftpStatus}</p>}
       </form>
 
-      <form onSubmit={submitPlan} style={{ border: "1px solid #ccc", padding: 16, borderRadius: 8 }}>
-        <h3>New FTP Builder Plan</h3>
-        <div style={{ marginBottom: 8 }}>
-          <label>
-            Start date (Monday):{" "}
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              required
-            />
-          </label>
+      <form onSubmit={submitPlan} className="field-group">
+        <h4>New FTP builder plan</h4>
+        <label>
+          Start (Mon)
+          <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
+        </label>
+        <label>
+          Duration
+          <input
+            type="number"
+            value={durationWeeks}
+            onChange={(e) => setDurationWeeks(e.target.value)}
+            min={4}
+            max={20}
+            required
+            style={{ width: 50 }}
+          />
+          weeks
+        </label>
+        <label>
+          Key workouts/wk
+          <select value={keyWorkoutsPerWeek} onChange={(e) => setKeyWorkoutsPerWeek(e.target.value)}>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </label>
+        <label>
+          Hours/wk target
+          <input
+            type="number"
+            value={targetWeeklyHours}
+            onChange={(e) => setTargetWeeklyHours(e.target.value)}
+            min={2}
+            max={20}
+            step={0.5}
+            required
+            style={{ width: 50 }}
+          />
+        </label>
+        <div>
+          <button type="submit" disabled={submitting}>
+            {submitting ? "Creating..." : "Create plan"}
+          </button>
         </div>
-        <div style={{ marginBottom: 8 }}>
-          <label>
-            Duration (weeks):{" "}
-            <input
-              type="number"
-              value={durationWeeks}
-              onChange={(e) => setDurationWeeks(e.target.value)}
-              min={4}
-              max={20}
-              required
-              style={{ width: 60 }}
-            />
-          </label>
-        </div>
-        <div style={{ marginBottom: 8 }}>
-          <label>
-            Key workouts / week:{" "}
-            <select value={keyWorkoutsPerWeek} onChange={(e) => setKeyWorkoutsPerWeek(e.target.value)}>
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-            </select>
-          </label>
-        </div>
-        <div style={{ marginBottom: 8 }}>
-          <label>
-            Target hours / week:{" "}
-            <input
-              type="number"
-              value={targetWeeklyHours}
-              onChange={(e) => setTargetWeeklyHours(e.target.value)}
-              min={2}
-              max={20}
-              step={0.5}
-              required
-              style={{ width: 60 }}
-            />
-          </label>
-        </div>
-        <button type="submit" disabled={submitting}>
-          {submitting ? "Creating..." : "Create plan"}
-        </button>
-        {planStatus && <p style={{ fontSize: 13, color: "#555" }}>{planStatus}</p>}
+        {planStatus && <p className="form-status">{planStatus}</p>}
       </form>
     </div>
   );

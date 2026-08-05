@@ -7,21 +7,28 @@ import PlanForm from "./PlanForm";
 // pre-rendered at build time — force it to run per-request instead.
 export const dynamic = "force-dynamic";
 
-export default async function Dashboard() {
-  const [stravaToken, whoopToken] = await Promise.all([
-    getToken("strava"),
-    getToken("whoop"),
-  ]);
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-  const { rows: activities } = await pool.query(
-    "select * from activities order by start_date desc limit 5"
-  );
-  const { rows: recovery } = await pool.query(
-    "select * from recovery_days order by date desc limit 5"
-  );
-  const { rows: settingsRows } = await pool.query(
-    "select ftp_watts from athlete_settings where id = true"
-  );
+function zoneColorVar(title: string): string {
+  if (title.startsWith("Recovery")) return "var(--z1)";
+  if (title.startsWith("Endurance")) return "var(--z2)";
+  if (title.startsWith("Sweet spot")) return "var(--z3)";
+  if (title.startsWith("Threshold")) return "var(--z4)";
+  if (title.startsWith("VO2max")) return "var(--z5)";
+  if (title.startsWith("FTP test")) return "var(--z6)";
+  return "var(--z1)";
+}
+
+function fmtDate(d: any): string {
+  return d?.toISOString?.().slice(0, 10) ?? String(d).slice(0, 10);
+}
+
+export default async function Dashboard() {
+  const [stravaToken, whoopToken] = await Promise.all([getToken("strava"), getToken("whoop")]);
+
+  const { rows: activities } = await pool.query("select * from activities order by start_date desc limit 5");
+  const { rows: recovery } = await pool.query("select * from recovery_days order by date desc limit 5");
+  const { rows: settingsRows } = await pool.query("select ftp_watts from athlete_settings where id = true");
   const currentFtp: number | null = settingsRows[0]?.ftp_watts ?? null;
 
   const { rows: planRows } = await pool.query(
@@ -29,162 +36,241 @@ export default async function Dashboard() {
   );
   const activePlan = planRows[0] ?? null;
 
-  const today = new Date().toISOString().slice(0, 10);
+  const todayDate = new Date();
+  const today = todayDate.toISOString().slice(0, 10);
+
   let todayRecommendation: any = null;
+  let todayWorkout: any = null;
+  let weekTiles: Array<{ date: string; dayName: string; isToday: boolean; workout: any | null }> = [];
+  let weekLabel = "";
+  let recentCompletedWorkouts: any[] = [];
+
   if (activePlan) {
-    const [{ rows: recoveryRows }, { rows: todayWorkoutRows }] = await Promise.all([
+    // Monday of the current calendar week — plan start_date is required to be
+    // a Monday, so calendar weeks and plan weeks stay aligned.
+    const jsDay = todayDate.getDay(); // 0=Sun
+    const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
+    const monday = new Date(todayDate);
+    monday.setDate(monday.getDate() + mondayOffset);
+
+    const weekDates = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(d.getDate() + i);
+      return d.toISOString().slice(0, 10);
+    });
+
+    const [{ rows: recoveryRows }, { rows: weekWorkouts }] = await Promise.all([
       pool.query("select recovery_score from recovery_days where date = $1", [today]),
       pool.query(
-        `select title, structure from planned_workouts where plan_id = $1 and scheduled_date = $2 limit 1`,
-        [activePlan.id, today]
+        `select * from planned_workouts where plan_id = $1 and scheduled_date between $2 and $3 order by scheduled_date asc`,
+        [activePlan.id, weekDates[0], weekDates[6]]
       ),
     ]);
-    if (recoveryRows.length > 0) {
-      todayRecommendation = getDailyRecommendation(
-        Number(recoveryRows[0].recovery_score),
-        todayWorkoutRows[0] ?? null
-      );
-    }
-  }
 
-  let thisWeekWorkouts: any[] = [];
-  let recentCompletedWorkouts: any[] = [];
-  if (activePlan) {
-    const { rows: currentWeekRow } = await pool.query(
-      `select week_number, phase from planned_workouts
-       where plan_id = $1 and scheduled_date <= $2
-       order by scheduled_date desc limit 1`,
-      [activePlan.id, today]
-    );
-    const weekNumber = currentWeekRow[0]?.week_number ?? 1;
-    const { rows } = await pool.query(
-      `select * from planned_workouts where plan_id = $1 and week_number = $2 order by scheduled_date asc`,
-      [activePlan.id, weekNumber]
-    );
-    thisWeekWorkouts = rows;
+    todayWorkout = weekWorkouts.find((w: any) => fmtDate(w.scheduled_date) === today) ?? null;
+
+    if (recoveryRows.length > 0) {
+      todayRecommendation = getDailyRecommendation(Number(recoveryRows[0].recovery_score), todayWorkout);
+    }
+
+    weekTiles = weekDates.map((date, i) => ({
+      date,
+      dayName: DAY_NAMES[i],
+      isToday: date === today,
+      workout: weekWorkouts.find((w: any) => fmtDate(w.scheduled_date) === date) ?? null,
+    }));
+
+    if (weekWorkouts.length > 0) {
+      weekLabel = `${weekWorkouts[0].phase} · week ${weekWorkouts[0].week_number}/${activePlan.duration_weeks}`;
+    }
 
     const { rows: completedRows } = await pool.query(
       `select * from planned_workouts
        where plan_id = $1 and completed_activity_id is not null
-       order by scheduled_date desc limit 10`,
+       order by scheduled_date desc limit 6`,
       [activePlan.id]
     );
     recentCompletedWorkouts = completedRows;
   }
 
   return (
-    <main style={{ padding: 24, fontFamily: "sans-serif" }}>
-      <h1>Apex</h1>
+    <main className="page">
+      <div className="top-row">
+        <div className="brand">Apex</div>
+        <div className="conn-pills">
+          <span className={`pill ${stravaToken ? "connected" : ""}`}>
+            {stravaToken ? "● Strava" : <a href="/api/auth/strava">Connect Strava</a>}
+          </span>
+          <span className={`pill ${whoopToken ? "connected" : ""}`}>
+            {whoopToken ? "● WHOOP" : <a href="/api/auth/whoop">Connect WHOOP</a>}
+          </span>
+        </div>
+      </div>
 
-      {activePlan && (
-        <section style={{ border: "2px solid #333", padding: 16, borderRadius: 8, marginBottom: 16 }}>
-          <h2>Today</h2>
-          {todayRecommendation ? (
-            <p>
-              <strong>
-                {todayRecommendation.band === "green" && "🟢"}
-                {todayRecommendation.band === "yellow" && "🟡"}
-                {todayRecommendation.band === "red" && "🔴"}{" "}
-                Recovery: {todayRecommendation.recoveryScore}%
-              </strong>
-              <br />
-              {todayRecommendation.message}
+      {activePlan ? (
+        <>
+          <div className="today-card">
+            <p className="today-eyebrow">
+              Today ·{" "}
+              {todayDate.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
             </p>
-          ) : (
-            <p>No WHOOP recovery synced for today yet.</p>
-          )}
-        </section>
-      )}
 
-      <section>
-        <h2>Connections</h2>
-        <p>
-          Strava: {stravaToken ? "connected ✅" : <a href="/api/auth/strava">Connect</a>}
-        </p>
-        <p>
-          WHOOP: {whoopToken ? "connected ✅" : <a href="/api/auth/whoop">Connect</a>}
-        </p>
-        {stravaToken && (
-          <p>
-            <a href="/api/backfill/strava?limit=100">Backfill last 100 Strava rides</a>
-          </p>
-        )}
-        {whoopToken && (
-          <p>
-            <a href="/api/backfill/whoop?limit=90">Backfill last 90 days of WHOOP recovery</a>
-          </p>
-        )}
-      </section>
+            {todayRecommendation ? (
+              <>
+                <div className="today-main">
+                  <div className="readout">
+                    <div className={`readout-value mono ${todayRecommendation.band}`}>
+                      {todayRecommendation.recoveryScore}
+                    </div>
+                    <div className="readout-label">Recovery %</div>
+                  </div>
+                  <div className="today-message">{todayRecommendation.message}</div>
+                </div>
 
-      <section>
-        <h2>Training plan</h2>
-        <PlanForm currentFtp={currentFtp} />
+                {todayWorkout && (
+                  <div className="today-workout">
+                    <div>
+                      <div className="workout-title">{todayWorkout.title}</div>
+                      <div className="workout-desc">{todayWorkout.description}</div>
+                    </div>
+                    <div className="workout-meta mono">
+                      {todayWorkout.target_duration_min}min · ~{todayWorkout.target_tss} TSS
+                      {todayWorkout.completed_activity_id && (
+                        <>
+                          {" "}
+                          · ✅{" "}
+                          <a href={`/api/plans/workouts/${todayWorkout.id}/compliance`}>compliance</a>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="empty-today">
+                {todayWorkout
+                  ? `No WHOOP recovery synced yet — today's workout is "${todayWorkout.title}".`
+                  : "No workout scheduled today."}
+              </p>
+            )}
+          </div>
 
-        {activePlan ? (
-          <div>
-            <p>
-              Active plan: <strong>{activePlan.type}</strong> — started {activePlan.start_date?.toISOString?.().slice(0, 10)}{" "}
-              — {activePlan.duration_weeks} weeks, {activePlan.key_workouts_per_week} key workouts/week, ~
-              {activePlan.target_weekly_hours}h/week target
-              {" — "}
-              <a href="/api/plans/rematch">Rematch existing rides to plan</a>
-            </p>
-            <h3>This week</h3>
-            <ul>
-              {thisWeekWorkouts.map((w) => (
-                <li key={w.id}>
-                  [{w.phase}] {w.scheduled_date?.toISOString?.().slice(0, 10)} — <strong>{w.title}</strong> —{" "}
-                  {w.target_duration_min}min, ~{w.target_tss} TSS
-                  {w.completed_activity_id ? (
+          <div className="week-section">
+            <div className="week-header">
+              <span className="week-title">This week</span>
+              <span className="week-phase mono">{weekLabel}</span>
+            </div>
+            <div className="week-strip">
+              {weekTiles.map((tile) => (
+                <div
+                  key={tile.date}
+                  className={`day-tile ${tile.isToday ? "today" : ""} ${!tile.workout ? "rest" : ""}`}
+                >
+                  {tile.workout?.completed_activity_id && <span className="day-check">✅</span>}
+                  <div className="day-name mono">{tile.dayName}</div>
+                  {tile.workout ? (
                     <>
-                      {" "}
-                      ✅ <a href={`/api/plans/workouts/${w.id}/compliance`}>view compliance</a>
+                      <div
+                        className="day-zone-bar"
+                        style={{ background: zoneColorVar(tile.workout.title) }}
+                      />
+                      <div className="day-label">{tile.workout.title}</div>
+                      <div className="day-dur mono">{tile.workout.target_duration_min}min</div>
                     </>
                   ) : (
-                    ""
+                    <div className="day-label" style={{ color: "var(--text-muted)" }}>
+                      Rest
+                    </div>
                   )}
-                </li>
+                </div>
               ))}
-            </ul>
-
-            <h3>Recently completed</h3>
-            <ul>
-              {recentCompletedWorkouts.map((w) => (
-                <li key={w.id}>
-                  [{w.phase}] {w.scheduled_date?.toISOString?.().slice(0, 10)} — <strong>{w.title}</strong> — ✅{" "}
-                  <a href={`/api/plans/workouts/${w.id}/compliance`}>view compliance</a>
-                </li>
-              ))}
-              {recentCompletedWorkouts.length === 0 && <li>No completed workouts linked yet.</li>}
-            </ul>
+            </div>
           </div>
-        ) : (
-          <p>No active plan yet — use the form above to create one.</p>
+        </>
+      ) : (
+        <div className="today-card">
+          <p className="empty-today">No active plan yet — set one up below.</p>
+        </div>
+      )}
+
+      <div className="secondary-grid">
+        <div className="panel">
+          <h3>Recently completed</h3>
+          <ul className="list">
+            {recentCompletedWorkouts.map((w) => (
+              <li key={w.id}>
+                <span>{w.title}</span>
+                <span className="muted">
+                  {fmtDate(w.scheduled_date)} ·{" "}
+                  <a href={`/api/plans/workouts/${w.id}/compliance`}>compliance</a>
+                </span>
+              </li>
+            ))}
+            {recentCompletedWorkouts.length === 0 && <li className="muted">Nothing linked yet.</li>}
+          </ul>
+        </div>
+
+        <div className="panel">
+          <h3>Recent rides</h3>
+          <ul className="list">
+            {activities.map((a) => (
+              <li key={a.id}>
+                <span>{a.name}</span>
+                <span className="muted">
+                  {fmtDate(a.start_date)} {a.avg_watts ? `· ${Math.round(a.avg_watts)}W` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="panel">
+          <h3>Recent recovery</h3>
+          <ul className="list">
+            {recovery.map((r) => (
+              <li key={r.date}>
+                <span>{fmtDate(r.date)}</span>
+                <span className="muted">
+                  {r.recovery_score}% · HRV {r.hrv_ms}ms
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="panel">
+          <h3>Backfill</h3>
+          <ul className="list">
+            {stravaToken && (
+              <li>
+                <a href="/api/backfill/strava?limit=100">Backfill last 100 Strava rides</a>
+              </li>
+            )}
+            {whoopToken && (
+              <li>
+                <a href="/api/backfill/whoop?limit=90">Backfill last 90 days of WHOOP recovery</a>
+              </li>
+            )}
+            {activePlan && (
+              <li>
+                <a href="/api/plans/rematch">Rematch existing rides to plan</a>
+              </li>
+            )}
+          </ul>
+        </div>
+      </div>
+
+      <details className="setup">
+        <summary>Plan setup &amp; FTP</summary>
+        <PlanForm currentFtp={currentFtp} />
+        {activePlan && (
+          <p className="form-status">
+            Active: {activePlan.type} · started {fmtDate(activePlan.start_date)} · {activePlan.duration_weeks}{" "}
+            weeks · {activePlan.key_workouts_per_week} key workouts/week · ~{activePlan.target_weekly_hours}
+            h/week
+          </p>
         )}
-      </section>
-
-      <section>
-        <h2>Recent rides</h2>
-        <ul>
-          {activities.map((a) => (
-            <li key={a.id}>
-              {a.name} — {a.start_date?.toISOString?.().slice(0, 10)} —{" "}
-              {a.avg_watts ? `${Math.round(a.avg_watts)}W avg` : "no power"}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section>
-        <h2>Recent recovery</h2>
-        <ul>
-          {recovery.map((r) => (
-            <li key={r.date}>
-              {r.date?.toISOString?.().slice(0, 10)} — recovery {r.recovery_score}% — HRV {r.hrv_ms}ms
-            </li>
-          ))}
-        </ul>
-      </section>
+      </details>
     </main>
   );
 }
