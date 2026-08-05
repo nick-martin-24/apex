@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStravaActivity, getStravaActivityStreams, upsertStravaActivity, upsertStravaStreams } from "@/lib/strava";
+import { matchActivityToPlannedWorkout } from "@/lib/planMatching";
 
 // Strava calls this once when you register the subscription, to verify you own the endpoint
 export async function GET(req: NextRequest) {
@@ -24,6 +25,7 @@ export async function POST(req: NextRequest) {
 
     if (detail.type === "Ride" || detail.type === "VirtualRide") {
       await upsertStravaActivity(detail);
+      await matchActivityToPlannedWorkout(String(detail.id), detail.start_date);
 
       const streams = await getStravaActivityStreams(activityId).catch(() => null);
       if (streams) await upsertStravaStreams(activityId, streams);

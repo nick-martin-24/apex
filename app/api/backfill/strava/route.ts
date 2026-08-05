@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listStravaActivities, upsertStravaActivity } from "@/lib/strava";
+import { matchActivityToPlannedWorkout } from "@/lib/planMatching";
 
 // Visit /api/backfill/strava?limit=100 to pull existing rides in.
 // Uses the summary list endpoint (fast, one call per 200 activities) rather
@@ -20,6 +21,7 @@ export async function GET(req: NextRequest) {
     for (const activity of batch) {
       if (activity.type === "Ride" || activity.type === "VirtualRide") {
         await upsertStravaActivity(activity);
+        await matchActivityToPlannedWorkout(String(activity.id), activity.start_date);
         imported++;
       } else {
         skippedNonRide++;

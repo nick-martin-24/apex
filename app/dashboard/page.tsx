@@ -78,6 +78,8 @@ export default async function Dashboard() {
             <p>
               Active plan: <strong>{activePlan.type}</strong> — started {activePlan.start_date?.toISOString?.().slice(0, 10)}{" "}
               — {activePlan.duration_weeks} weeks, {activePlan.key_workouts_per_week} key workouts/week
+              {" — "}
+              <a href="/api/plans/rematch">Rematch existing rides to plan</a>
             </p>
             <h3>This week</h3>
             <ul>
