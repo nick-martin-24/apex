@@ -260,6 +260,7 @@ button.day-tile {
   padding: 10px 8px;
   font-size: inherit;
   font-weight: normal;
+  color: var(--text);
 }
 button.day-tile:hover {
   background: var(--surface);

@@ -30,6 +30,12 @@ function addDays(dateStr: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function fmtHoursMinutes(totalMin: number): string {
+  const h = Math.floor(totalMin / 60);
+  const m = Math.round(totalMin % 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 interface DayData {
   date: string;
   isToday: boolean;
@@ -299,7 +305,7 @@ export default function PlanDashboard({
             <span className="week-title">Plan overview</span>
             {activeTabWeek && (
               <span className="week-phase mono">
-                {activeTabWeek.phase} · {(tabWeekMin / 60).toFixed(1)}h · {tabWeekTss} TSS
+                {activeTabWeek.phase} · {fmtHoursMinutes(tabWeekMin)} · {tabWeekTss} TSS
               </span>
             )}
           </div>

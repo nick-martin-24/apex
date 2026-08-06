@@ -15,6 +15,12 @@ function fmtDate(d: any): string {
   return d?.toISOString?.().slice(0, 10) ?? String(d).slice(0, 10);
 }
 
+function fmtHoursMinutes(totalMin: number): string {
+  const h = Math.floor(totalMin / 60);
+  const m = Math.round(totalMin % 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 export default async function Dashboard() {
   const [stravaToken, whoopToken] = await Promise.all([getToken("strava"), getToken("whoop")]);
 
@@ -85,7 +91,7 @@ export default async function Dashboard() {
     if (weekWorkouts.length > 0) {
       const weekTotalTss = weekWorkouts.reduce((sum: number, w: any) => sum + (w.target_tss ?? 0), 0);
       const weekTotalMin = weekWorkouts.reduce((sum: number, w: any) => sum + (w.target_duration_min ?? 0), 0);
-      weekLabel = `${weekWorkouts[0].phase} · week ${weekWorkouts[0].week_number}/${activePlan.duration_weeks} · ${(weekTotalMin / 60).toFixed(1)}h · ${weekTotalTss} TSS`;
+      weekLabel = `${weekWorkouts[0].phase} · week ${weekWorkouts[0].week_number}/${activePlan.duration_weeks} · ${fmtHoursMinutes(weekTotalMin)} · ${weekTotalTss} TSS`;
       currentWeekNumber = weekWorkouts[0].week_number;
     }
 
