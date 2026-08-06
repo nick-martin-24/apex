@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import AdjustWorkout from "./AdjustWorkout";
 
 function zoneColorVar(title: string): string {
   if (title.startsWith("Recovery")) return "var(--z1)";
@@ -156,6 +157,9 @@ export default function PlanDashboard({
                 <div className="today-message">{data.recommendation.message}</div>
               </div>
               {data.workout && <WorkoutMeta workout={data.workout} date={data.date} />}
+              {data.workout && !data.workout.completed_activity_id && (
+                <AdjustWorkout workoutId={data.workout.id} date={data.date} />
+              )}
             </>
           ) : (
             <p className="empty-today">
@@ -185,6 +189,9 @@ export default function PlanDashboard({
               )}
             </div>
             {data.workout ? <WorkoutMeta workout={data.workout} date={data.date} /> : <p className="empty-today">Rest day.</p>}
+            {data.workout && !data.workout.completed_activity_id && (
+              <AdjustWorkout workoutId={data.workout.id} date={data.date} />
+            )}
             {data.activity && data.compliance && (
               <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>

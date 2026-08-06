@@ -96,7 +96,7 @@ function lightType(allowedTypes: KeyWorkoutType[]): KeyWorkoutType {
 
 // ---------- Workout generators ----------
 
-function endurance(dayOffset: number, minutes: number): WorkoutTemplate {
+export function endurance(dayOffset: number, minutes: number): WorkoutTemplate {
   const structure = [{ type: "steady", min: minutes, pct_ftp: [55, 75] }];
   return {
     dayOffset,
@@ -108,7 +108,7 @@ function endurance(dayOffset: number, minutes: number): WorkoutTemplate {
   };
 }
 
-function recovery(dayOffset: number): WorkoutTemplate {
+export function recovery(dayOffset: number): WorkoutTemplate {
   const structure = [{ type: "steady", min: 35, pct_ftp: [40, 55] }];
   return {
     dayOffset,
@@ -120,7 +120,7 @@ function recovery(dayOffset: number): WorkoutTemplate {
   };
 }
 
-function tempo(dayOffset: number, minutes: number): WorkoutTemplate {
+export function tempo(dayOffset: number, minutes: number): WorkoutTemplate {
   const structure = [{ type: "steady", min: minutes, pct_ftp: [76, 90] }];
   return {
     dayOffset,
@@ -132,7 +132,7 @@ function tempo(dayOffset: number, minutes: number): WorkoutTemplate {
   };
 }
 
-function sweetSpot(dayOffset: number, reps: number, onMin: number): WorkoutTemplate {
+export function sweetSpot(dayOffset: number, reps: number, onMin: number): WorkoutTemplate {
   const totalMin = 15 + reps * (onMin + 5) + 10;
   const structure = [
     { type: "warmup", min: 15 },
@@ -149,7 +149,7 @@ function sweetSpot(dayOffset: number, reps: number, onMin: number): WorkoutTempl
   };
 }
 
-function threshold(dayOffset: number, reps: number, onMin: number): WorkoutTemplate {
+export function threshold(dayOffset: number, reps: number, onMin: number): WorkoutTemplate {
   const totalMin = 15 + reps * (onMin + 5) + 10;
   const structure = [
     { type: "warmup", min: 15 },
@@ -166,7 +166,7 @@ function threshold(dayOffset: number, reps: number, onMin: number): WorkoutTempl
   };
 }
 
-function vo2max(dayOffset: number, reps: number, onMin: number): WorkoutTemplate {
+export function vo2max(dayOffset: number, reps: number, onMin: number): WorkoutTemplate {
   const totalMin = 20 + reps * (onMin + onMin) + 10;
   const structure = [
     { type: "warmup", min: 20 },
@@ -183,7 +183,7 @@ function vo2max(dayOffset: number, reps: number, onMin: number): WorkoutTemplate
   };
 }
 
-function sprints(dayOffset: number, reps: number, onSec: number): WorkoutTemplate {
+export function sprints(dayOffset: number, reps: number, onSec: number): WorkoutTemplate {
   const onMin = onSec / 60;
   const offMin = 4.5;
   const totalMin = round(20 + reps * (onMin + offMin) + 10);
