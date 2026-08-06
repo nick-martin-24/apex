@@ -37,7 +37,7 @@ export default async function Dashboard() {
   const today = getEasternDateString();
   const todayDate = new Date(today + "T00:00:00");
 
-  let initialToday: any = { date: today, isToday: true, recovery: null, workout: null, activity: null, compliance: null, recommendation: null };
+  let initialToday: any = { date: today, isToday: true, recovery: null, workout: null, activity: null, compliance: null, assessment: null, recommendation: null };
   let weekTiles: Array<{ date: string; dayName: string; workout: any | null }> = [];
   let weekLabel = "";
   let currentWeekNumber = 1;
@@ -75,6 +75,7 @@ export default async function Dashboard() {
       workout: todayWorkout,
       activity: null,
       compliance: null,
+      assessment: null,
       recommendation: todayRecovery ? getDailyRecommendation(Number(todayRecovery.recovery_score), todayWorkout) : null,
     };
 
@@ -153,7 +154,7 @@ export default async function Dashboard() {
                 <span>{w.title}</span>
                 <span className="muted">
                   {fmtDate(w.scheduled_date)} ·{" "}
-                  <a href={`/api/plans/workouts/${w.id}/compliance`}>compliance</a>
+                  <a href={`/dashboard/day/${fmtDate(w.scheduled_date)}`}>compliance</a>
                 </span>
               </li>
             ))}

@@ -1,5 +1,5 @@
 import { pool } from "@/lib/db";
-import { computeCompliance } from "@/lib/compliance";
+import { computeCompliance, assessCompliance } from "@/lib/compliance";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +18,7 @@ export default async function DayDetail({ params }: { params: { date: string } }
   let workout: any = null;
   let activity: any = null;
   let compliance: any = null;
+  let assessment: any = null;
 
   if (activePlan) {
     const { rows } = await pool.query(
@@ -46,6 +47,7 @@ export default async function DayDetail({ params }: { params: { date: string } }
         stream,
         ftp
       );
+      assessment = assessCompliance(compliance);
     }
   }
 
@@ -111,7 +113,10 @@ export default async function DayDetail({ params }: { params: { date: string } }
 
       {activity && compliance && (
         <div className="panel" style={{ marginBottom: 20 }}>
-          <h3>Ride performance — {activity.name}</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+            <h3 style={{ margin: 0 }}>Ride performance — {activity.name}</h3>
+            {assessment && <span className={`assessment-badge ${assessment.band}`}>{assessment.band}</span>}
+          </div>
           <div className="stat-row">
             <div className="stat">
               <div className="stat-value mono">
@@ -164,6 +169,8 @@ export default async function DayDetail({ params }: { params: { date: string } }
               ))}
             </div>
           )}
+
+          {assessment && <p className="assessment-summary">{assessment.summary}</p>}
         </div>
       )}
     </main>

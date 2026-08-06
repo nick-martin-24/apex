@@ -37,6 +37,7 @@ interface DayData {
   workout: any | null;
   activity: any | null;
   compliance: any | null;
+  assessment: any | null;
   recommendation: any | null;
 }
 
@@ -148,7 +149,7 @@ export default function PlanDashboard({
                 </div>
                 <div className="today-message">{data.recommendation.message}</div>
               </div>
-              {data.workout && <WorkoutMeta workout={data.workout} />}
+              {data.workout && <WorkoutMeta workout={data.workout} date={data.date} />}
             </>
           ) : (
             <p className="empty-today">
@@ -177,11 +178,14 @@ export default function PlanDashboard({
                 <p className="empty-today">No WHOOP data for this date.</p>
               )}
             </div>
-            {data.workout ? <WorkoutMeta workout={data.workout} /> : <p className="empty-today">Rest day.</p>}
+            {data.workout ? <WorkoutMeta workout={data.workout} date={data.date} /> : <p className="empty-today">Rest day.</p>}
             {data.activity && data.compliance && (
               <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-                <div className="workout-title" style={{ marginBottom: 8 }}>
-                  Ride performance — {data.activity.name}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+                  <div className="workout-title">Ride performance — {data.activity.name}</div>
+                  {data.assessment && (
+                    <span className={`assessment-badge ${data.assessment.band}`}>{data.assessment.band}</span>
+                  )}
                 </div>
                 <div className="stat-row">
                   <div className="stat">
@@ -225,6 +229,7 @@ export default function PlanDashboard({
                     ))}
                   </div>
                 )}
+                {data.assessment && <p className="assessment-summary">{data.assessment.summary}</p>}
               </div>
             )}
           </>
@@ -339,7 +344,7 @@ export default function PlanDashboard({
   );
 }
 
-function WorkoutMeta({ workout }: { workout: any }) {
+function WorkoutMeta({ workout, date }: { workout: any; date: string }) {
   return (
     <div className="today-workout">
       <div>
@@ -351,7 +356,7 @@ function WorkoutMeta({ workout }: { workout: any }) {
         {workout.completed_activity_id && (
           <>
             {" "}
-            · ✅ <a href={`/api/plans/workouts/${workout.id}/compliance`}>compliance</a>
+            · ✅ <a href={`/dashboard/day/${date}`}>compliance</a>
           </>
         )}
       </div>

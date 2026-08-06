@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { computeCompliance } from "@/lib/compliance";
+import { computeCompliance, assessCompliance } from "@/lib/compliance";
 import { getDailyRecommendation } from "@/lib/recommendation";
 import { getEasternDateString } from "@/lib/date";
 
@@ -21,6 +21,7 @@ export async function GET(_req: Request, { params }: { params: { date: string } 
   let workout: any = null;
   let activity: any = null;
   let compliance: any = null;
+  let assessment: any = null;
   let recommendation: any = null;
 
   if (activePlan) {
@@ -50,6 +51,7 @@ export async function GET(_req: Request, { params }: { params: { date: string } 
         stream,
         ftp
       );
+      assessment = assessCompliance(compliance);
     }
   }
 
@@ -58,5 +60,5 @@ export async function GET(_req: Request, { params }: { params: { date: string } 
     recommendation = getDailyRecommendation(Number(recovery.recovery_score), workout);
   }
 
-  return NextResponse.json({ date, isToday, recovery, workout, activity, compliance, recommendation });
+  return NextResponse.json({ date, isToday, recovery, workout, activity, compliance, assessment, recommendation });
 }
