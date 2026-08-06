@@ -10,6 +10,7 @@ import {
   KeyWorkoutType,
   WorkoutTemplate,
 } from "./planTemplates/ftpBuilder";
+import { isKeyWorkout, getRecoveryBand, RecoveryBand } from "./recommendation";
 
 export type SwapType = KeyWorkoutType | "endurance" | "recovery";
 
@@ -122,4 +123,188 @@ export async function moveWorkout(workoutId: number, newDate: string) {
   }
 
   return { moved: workoutId, newDate, swappedWith: existing ? { id: existing.id, movedTo: workout.scheduled_date.toISOString().slice(0, 10) } : null };
+}
+
+// ---------- Preview: assess impact before applying ----------
+
+export interface WeekTssImpact {
+  weekNumber: number;
+  tssBefore: number;
+  tssAfter: number;
+  delta: number;
+}
+
+export interface RecoveryAdvice {
+  available: boolean;
+  band?: RecoveryBand;
+  recoveryScore?: number;
+  message: string;
+  recommended: boolean | null; // null when no data to judge from
+}
+
+export interface ProximityAdvice {
+  message: string;
+  recommended: boolean;
+}
+
+export interface AdjustmentPreview {
+  weeks: WeekTssImpact[];
+  recovery: RecoveryAdvice;
+  proximity: ProximityAdvice;
+  overall: "recommended" | "caution" | "not_recommended";
+}
+
+async function weekTssTotal(planId: number, weekNumber: number): Promise<number> {
+  const { rows } = await pool.query(
+    "select coalesce(sum(target_tss), 0) as total from planned_workouts where plan_id = $1 and week_number = $2",
+    [planId, weekNumber]
+  );
+  return Number(rows[0].total);
+}
+
+function adviseOnRecovery(
+  recoveryRow: { recovery_score: number } | null,
+  workoutIsKey: boolean
+): RecoveryAdvice {
+  if (!recoveryRow) {
+    return {
+      available: false,
+      message: "No WHOOP recovery data available for that date to judge against.",
+      recommended: null,
+    };
+  }
+  const score = Number(recoveryRow.recovery_score);
+  const band = getRecoveryBand(score);
+
+  if (band === "green") {
+    return { available: true, band, recoveryScore: score, message: `Recovery is green (${score}%) — no concern either way.`, recommended: true };
+  }
+  if (band === "yellow") {
+    return workoutIsKey
+      ? { available: true, band, recoveryScore: score, message: `Recovery is yellow (${score}%) — a key/hard session here is a bit ambitious.`, recommended: false }
+      : { available: true, band, recoveryScore: score, message: `Recovery is yellow (${score}%) — an easier session here fits well.`, recommended: true };
+  }
+  // red
+  return workoutIsKey
+    ? { available: true, band, recoveryScore: score, message: `Recovery is red (${score}%) — a key/hard session here isn't recommended.`, recommended: false }
+    : { available: true, band, recoveryScore: score, message: `Recovery is red (${score}%) — an easy session here is appropriate.`, recommended: true };
+}
+
+async function adviseOnProximity(
+  planId: number,
+  targetDate: string,
+  workoutIsKey: boolean,
+  excludeWorkoutId: number
+): Promise<ProximityAdvice> {
+  if (!workoutIsKey) {
+    return { message: "Not a key/hard session, so day-to-day spacing isn't a concern.", recommended: true };
+  }
+
+  const target = new Date(targetDate + "T00:00:00");
+  const prev = new Date(target);
+  prev.setDate(prev.getDate() - 1);
+  const next = new Date(target);
+  next.setDate(next.getDate() + 1);
+  const prevStr = prev.toISOString().slice(0, 10);
+  const nextStr = next.toISOString().slice(0, 10);
+
+  const { rows } = await pool.query(
+    "select title, structure, scheduled_date from planned_workouts where plan_id = $1 and scheduled_date in ($2, $3) and id != $4",
+    [planId, prevStr, nextStr, excludeWorkoutId]
+  );
+
+  const adjacentKey = rows.find((r: any) => isKeyWorkout(r.structure));
+  if (adjacentKey) {
+    const adjDate = adjacentKey.scheduled_date.toISOString().slice(0, 10);
+    return {
+      message: `This lands right next to another key session ("${adjacentKey.title}" on ${adjDate}) with no rest day between — back-to-back hard efforts.`,
+      recommended: false,
+    };
+  }
+
+  return { message: "Adjacent days are easy or rest days — good spacing for a key session.", recommended: true };
+}
+
+function combineOverall(recovery: RecoveryAdvice, proximity: ProximityAdvice): AdjustmentPreview["overall"] {
+  const concerns = [recovery.recommended === false, proximity.recommended === false].filter(Boolean).length;
+  if (concerns === 0) return "recommended";
+  if (concerns === 1) return "caution";
+  return "not_recommended";
+}
+
+export async function previewSwap(
+  workoutId: number,
+  type: SwapType,
+  params: { reps?: number; onMin?: number; minutes?: number }
+): Promise<AdjustmentPreview> {
+  const { rows } = await pool.query("select * from planned_workouts where id = $1", [workoutId]);
+  if (rows.length === 0) throw new Error("Workout not found");
+  const workout = rows[0];
+
+  const generated = generateSwap(type, params, workout.day_offset);
+  const scheduledDate = workout.scheduled_date.toISOString().slice(0, 10);
+
+  const tssBefore = await weekTssTotal(workout.plan_id, workout.week_number);
+  const tssAfter = tssBefore - workout.target_tss + generated.targetTss;
+
+  const [{ rows: recoveryRows }] = await Promise.all([
+    pool.query("select recovery_score from recovery_days where date = $1", [scheduledDate]),
+  ]);
+
+  const newIsKey = isKeyWorkout(generated.structure);
+  const recoveryAdvice = adviseOnRecovery(recoveryRows[0] ?? null, newIsKey);
+  const proximityAdvice = await adviseOnProximity(workout.plan_id, scheduledDate, newIsKey, workoutId);
+
+  return {
+    weeks: [{ weekNumber: workout.week_number, tssBefore, tssAfter, delta: tssAfter - tssBefore }],
+    recovery: recoveryAdvice,
+    proximity: proximityAdvice,
+    overall: combineOverall(recoveryAdvice, proximityAdvice),
+  };
+}
+
+export async function previewMove(workoutId: number, newDate: string): Promise<AdjustmentPreview> {
+  const { rows: workoutRows } = await pool.query("select * from planned_workouts where id = $1", [workoutId]);
+  if (workoutRows.length === 0) throw new Error("Workout not found");
+  const workout = workoutRows[0];
+
+  const { rows: planRows } = await pool.query("select start_date from plans where id = $1", [workout.plan_id]);
+  if (planRows.length === 0) throw new Error("Plan not found");
+  const planStartDate = planRows[0].start_date.toISOString().slice(0, 10);
+
+  const { rows: existingRows } = await pool.query(
+    "select * from planned_workouts where plan_id = $1 and scheduled_date = $2 and id != $3",
+    [workout.plan_id, newDate, workoutId]
+  );
+  const existing = existingRows[0] ?? null;
+
+  const newPos = weekdayOffset(planStartDate, newDate);
+  const oldWeekNumber = workout.week_number;
+
+  const weeks: WeekTssImpact[] = [];
+  if (oldWeekNumber === newPos.weekNumber) {
+    // Same week — just reordering days, weekly total is unchanged.
+    const total = await weekTssTotal(workout.plan_id, oldWeekNumber);
+    weeks.push({ weekNumber: oldWeekNumber, tssBefore: total, tssAfter: total, delta: 0 });
+  } else {
+    const oldBefore = await weekTssTotal(workout.plan_id, oldWeekNumber);
+    const newBefore = await weekTssTotal(workout.plan_id, newPos.weekNumber);
+    const swapTss = existing ? existing.target_tss : 0;
+    const oldAfter = oldBefore - workout.target_tss + swapTss;
+    const newAfter = newBefore - swapTss + workout.target_tss;
+    weeks.push({ weekNumber: oldWeekNumber, tssBefore: oldBefore, tssAfter: oldAfter, delta: oldAfter - oldBefore });
+    weeks.push({ weekNumber: newPos.weekNumber, tssBefore: newBefore, tssAfter: newAfter, delta: newAfter - newBefore });
+  }
+
+  const workoutIsKey = isKeyWorkout(workout.structure);
+  const { rows: recoveryRows } = await pool.query("select recovery_score from recovery_days where date = $1", [newDate]);
+  const recoveryAdvice = adviseOnRecovery(recoveryRows[0] ?? null, workoutIsKey);
+  const proximityAdvice = await adviseOnProximity(workout.plan_id, newDate, workoutIsKey, workoutId);
+
+  return {
+    weeks,
+    recovery: recoveryAdvice,
+    proximity: proximityAdvice,
+    overall: combineOverall(recoveryAdvice, proximityAdvice),
+  };
 }
