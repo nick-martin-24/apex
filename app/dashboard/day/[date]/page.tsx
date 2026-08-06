@@ -43,7 +43,7 @@ export default async function DayDetail({ params }: { params: { date: string } }
     if (activity) {
       compliance = computeCompliance(
         { target_duration_min: workout.target_duration_min, structure: workout.structure },
-        { moving_time_s: activity.moving_time_s, avg_watts: activity.avg_watts },
+        { moving_time_s: activity.moving_time_s, avg_watts: activity.avg_watts, weighted_avg_watts: activity.weighted_avg_watts },
         stream,
         ftp
       );
@@ -131,21 +131,24 @@ export default async function DayDetail({ params }: { params: { date: string } }
             </div>
             <div className="stat">
               <div className="stat-value mono">
-                {compliance.intensity.actualPctFtp ?? "—"}
-                <span style={{ fontSize: 14, color: "var(--text-muted)" }}>
-                  {" "}
-                  / {compliance.intensity.targetPctFtp}%
-                </span>
+                {compliance.tss.actualTss ?? "—"}
+                <span style={{ fontSize: 14, color: "var(--text-muted)" }}> / {compliance.tss.targetTss}</span>
               </div>
-              <div className="stat-label">Avg %FTP (actual / target)</div>
+              <div className="stat-label">TSS (actual / planned)</div>
             </div>
-            {compliance.intensity.deltaPct != null && (
+            {compliance.tss.compliancePct != null && (
+              <div className="stat">
+                <div className="stat-value mono">{compliance.tss.compliancePct}%</div>
+                <div className="stat-label">TSS compliance</div>
+              </div>
+            )}
+            {compliance.intervals && (
               <div className="stat">
                 <div className="stat-value mono">
-                  {compliance.intensity.deltaPct > 0 ? "+" : ""}
-                  {compliance.intensity.deltaPct}%
+                  {compliance.intervals.achievedReps}
+                  <span style={{ fontSize: 14, color: "var(--text-muted)" }}> / {compliance.intervals.targetReps}</span>
                 </div>
-                <div className="stat-label">Intensity delta</div>
+                <div className="stat-label">Intervals @ target</div>
               </div>
             )}
           </div>

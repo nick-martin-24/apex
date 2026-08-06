@@ -30,3 +30,11 @@ export function computeTargetTss(structure: any[]): number {
 
   return Math.round(tss);
 }
+
+// Actual TSS from a completed ride, using the same TSS = duration_hours × IF² × 100
+// formula, with IF derived from Normalized Power if available (weighted_avg_watts),
+// falling back to plain average power if NP wasn't captured for that ride.
+export function computeActualTss(durationMin: number, powerWatts: number, ftpWatts: number): number {
+  const ifVal = powerWatts / ftpWatts;
+  return Math.round((durationMin / 60) * ifVal * ifVal * 100);
+}

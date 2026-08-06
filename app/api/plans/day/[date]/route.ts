@@ -47,7 +47,7 @@ export async function GET(_req: Request, { params }: { params: { date: string } 
     if (activity) {
       compliance = computeCompliance(
         { target_duration_min: workout.target_duration_min, structure: workout.structure },
-        { moving_time_s: activity.moving_time_s, avg_watts: activity.avg_watts },
+        { moving_time_s: activity.moving_time_s, avg_watts: activity.avg_watts, weighted_avg_watts: activity.weighted_avg_watts },
         stream,
         ftp
       );

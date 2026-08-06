@@ -204,14 +204,32 @@ export default function PlanDashboard({
                   </div>
                   <div className="stat">
                     <div className="stat-value mono">
-                      {data.compliance.intensity.actualPctFtp ?? "—"}
+                      {data.compliance.tss.actualTss ?? "—"}
                       <span style={{ fontSize: 14, color: "var(--text-muted)" }}>
                         {" "}
-                        / {data.compliance.intensity.targetPctFtp}%
+                        / {data.compliance.tss.targetTss}
                       </span>
                     </div>
-                    <div className="stat-label">Avg %FTP</div>
+                    <div className="stat-label">TSS (actual / planned)</div>
                   </div>
+                  {data.compliance.tss.compliancePct != null && (
+                    <div className="stat">
+                      <div className="stat-value mono">{data.compliance.tss.compliancePct}%</div>
+                      <div className="stat-label">TSS compliance</div>
+                    </div>
+                  )}
+                  {data.compliance.intervals && (
+                    <div className="stat">
+                      <div className="stat-value mono">
+                        {data.compliance.intervals.achievedReps}
+                        <span style={{ fontSize: 14, color: "var(--text-muted)" }}>
+                          {" "}
+                          / {data.compliance.intervals.targetReps}
+                        </span>
+                      </div>
+                      <div className="stat-label">Intervals @ target</div>
+                    </div>
+                  )}
                 </div>
                 {data.compliance.zones && (
                   <div className="zone-bars">
