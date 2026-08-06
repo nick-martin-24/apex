@@ -18,8 +18,6 @@ function fmtDate(d: any): string {
 export default async function Dashboard() {
   const [stravaToken, whoopToken] = await Promise.all([getToken("strava"), getToken("whoop")]);
 
-  const { rows: activities } = await pool.query("select * from activities order by start_date desc limit 5");
-  const { rows: recovery } = await pool.query("select * from recovery_days order by date desc limit 5");
   const { rows: settingsRows } = await pool.query("select ftp_watts from athlete_settings where id = true");
   const currentFtp: number | null = settingsRows[0]?.ftp_watts ?? null;
 
@@ -41,7 +39,6 @@ export default async function Dashboard() {
   let weekTiles: Array<{ date: string; dayName: string; workout: any | null }> = [];
   let weekLabel = "";
   let currentWeekNumber = 1;
-  let recentCompletedWorkouts: any[] = [];
   let allWeeks: Array<{ weekNumber: number; phase: string; workouts: any[] }> = [];
 
   if (activePlan) {
@@ -92,14 +89,6 @@ export default async function Dashboard() {
       currentWeekNumber = weekWorkouts[0].week_number;
     }
 
-    const { rows: completedRows } = await pool.query(
-      `select * from planned_workouts
-       where plan_id = $1 and completed_activity_id is not null
-       order by scheduled_date desc limit 6`,
-      [activePlan.id]
-    );
-    recentCompletedWorkouts = completedRows;
-
     const { rows: everyWorkout } = await pool.query(
       `select week_number, phase, day_offset, title, target_duration_min, target_tss, completed_activity_id
        from planned_workouts where plan_id = $1 order by scheduled_date asc`,
@@ -145,73 +134,6 @@ export default async function Dashboard() {
         </div>
       )}
 
-      <div className="secondary-grid">
-        <div className="panel">
-          <h3>Recently completed</h3>
-          <ul className="list">
-            {recentCompletedWorkouts.map((w) => (
-              <li key={w.id}>
-                <span>{w.title}</span>
-                <span className="muted">
-                  {fmtDate(w.scheduled_date)} ·{" "}
-                  <a href={`/dashboard/day/${fmtDate(w.scheduled_date)}`}>compliance</a>
-                </span>
-              </li>
-            ))}
-            {recentCompletedWorkouts.length === 0 && <li className="muted">Nothing linked yet.</li>}
-          </ul>
-        </div>
-
-        <div className="panel">
-          <h3>Recent rides</h3>
-          <ul className="list">
-            {activities.map((a) => (
-              <li key={a.id}>
-                <span>{a.name}</span>
-                <span className="muted">
-                  {fmtDate(a.start_date)} {a.avg_watts ? `· ${Math.round(a.avg_watts)}W` : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="panel">
-          <h3>Recent recovery</h3>
-          <ul className="list">
-            {recovery.map((r) => (
-              <li key={r.date}>
-                <span>{fmtDate(r.date)}</span>
-                <span className="muted">
-                  {r.recovery_score}% · HRV {r.hrv_ms != null ? Math.round(r.hrv_ms) : "—"}ms
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="panel">
-          <h3>Backfill</h3>
-          <ul className="list">
-            {stravaToken && (
-              <li>
-                <a href="/api/backfill/strava?limit=100">Backfill last 100 Strava rides</a>
-              </li>
-            )}
-            {whoopToken && (
-              <li>
-                <a href="/api/backfill/whoop?limit=90">Backfill last 90 days of WHOOP recovery</a>
-              </li>
-            )}
-            {activePlan && (
-              <li>
-                <a href="/api/plans/rematch">Rematch existing rides to plan</a>
-              </li>
-            )}
-          </ul>
-        </div>
-      </div>
-
       <details className="setup">
         <summary>Plan setup &amp; FTP</summary>
         <PlanForm currentFtp={currentFtp} />
@@ -223,6 +145,27 @@ export default async function Dashboard() {
             {activePlan.allowed_types && ` · types: ${(activePlan.allowed_types as string[]).join(", ")}`}
           </p>
         )}
+      </details>
+
+      <details className="setup" style={{ marginTop: 10 }}>
+        <summary>Debug / backfill</summary>
+        <ul className="list" style={{ paddingBottom: 12 }}>
+          {stravaToken && (
+            <li>
+              <a href="/api/backfill/strava?limit=100">Backfill last 100 Strava rides</a>
+            </li>
+          )}
+          {whoopToken && (
+            <li>
+              <a href="/api/backfill/whoop?limit=90">Backfill last 90 days of WHOOP recovery</a>
+            </li>
+          )}
+          {activePlan && (
+            <li>
+              <a href="/api/plans/rematch">Rematch existing rides to plan</a>
+            </li>
+          )}
+        </ul>
       </details>
     </main>
   );
