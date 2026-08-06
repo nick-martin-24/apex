@@ -4,6 +4,7 @@ import { getDailyRecommendation } from "@/lib/recommendation";
 import { getEasternDateString } from "@/lib/date";
 import PlanForm from "./PlanForm";
 import PlanDashboard from "./PlanDashboard";
+import CoachCheckin from "./CoachCheckin";
 
 // This page hits the database directly, so it can't be statically
 // pre-rendered at build time — force it to run per-request instead.
@@ -139,6 +140,8 @@ export default async function Dashboard() {
           <p className="empty-today">No active plan yet — set one up below.</p>
         </div>
       )}
+
+      <CoachCheckin />
 
       <details className="setup">
         <summary>Plan setup &amp; FTP</summary>

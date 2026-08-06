@@ -618,3 +618,16 @@ a.day-tile:hover {
   color: var(--text);
   margin-top: 10px;
 }
+
+/* ---------- Coach check-in ---------- */
+.coach-panel {
+  border-color: rgba(196, 242, 80, 0.25);
+}
+
+.coach-response {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-wrap;
+  margin: 14px 0 4px;
+}
