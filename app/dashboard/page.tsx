@@ -2,25 +2,13 @@ import { pool } from "@/lib/db";
 import { getToken } from "@/lib/tokens";
 import { getDailyRecommendation } from "@/lib/recommendation";
 import PlanForm from "./PlanForm";
-import WeekTabs from "./WeekTabs";
+import PlanDashboard from "./PlanDashboard";
 
 // This page hits the database directly, so it can't be statically
 // pre-rendered at build time — force it to run per-request instead.
 export const dynamic = "force-dynamic";
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-function zoneColorVar(title: string): string {
-  if (title.startsWith("Recovery")) return "var(--z1)";
-  if (title.startsWith("Endurance")) return "var(--z2)";
-  if (title.startsWith("Tempo")) return "var(--z3)";
-  if (title.startsWith("Sweet spot")) return "var(--z4)";
-  if (title.startsWith("Threshold")) return "var(--z4)";
-  if (title.startsWith("VO2max")) return "var(--z5)";
-  if (title.startsWith("Sprints")) return "var(--z7)";
-  if (title.startsWith("FTP test")) return "var(--z6)";
-  return "var(--z1)";
-}
 
 function fmtDate(d: any): string {
   return d?.toISOString?.().slice(0, 10) ?? String(d).slice(0, 10);
@@ -42,9 +30,8 @@ export default async function Dashboard() {
   const todayDate = new Date();
   const today = todayDate.toISOString().slice(0, 10);
 
-  let todayRecommendation: any = null;
-  let todayWorkout: any = null;
-  let weekTiles: Array<{ date: string; dayName: string; isToday: boolean; workout: any | null }> = [];
+  let initialToday: any = { date: today, isToday: true, recovery: null, workout: null, activity: null, compliance: null, recommendation: null };
+  let weekTiles: Array<{ date: string; dayName: string; workout: any | null }> = [];
   let weekLabel = "";
   let currentWeekNumber = 1;
   let recentCompletedWorkouts: any[] = [];
@@ -65,31 +52,35 @@ export default async function Dashboard() {
     });
 
     const [{ rows: recoveryRows }, { rows: weekWorkouts }] = await Promise.all([
-      pool.query("select recovery_score from recovery_days where date = $1", [today]),
+      pool.query("select * from recovery_days where date = $1", [today]),
       pool.query(
         `select * from planned_workouts where plan_id = $1 and scheduled_date between $2 and $3 order by scheduled_date asc`,
         [activePlan.id, weekDates[0], weekDates[6]]
       ),
     ]);
 
-    todayWorkout = weekWorkouts.find((w: any) => fmtDate(w.scheduled_date) === today) ?? null;
-
-    if (recoveryRows.length > 0) {
-      todayRecommendation = getDailyRecommendation(Number(recoveryRows[0].recovery_score), todayWorkout);
-    }
+    const todayWorkout = weekWorkouts.find((w: any) => fmtDate(w.scheduled_date) === today) ?? null;
+    const todayRecovery = recoveryRows[0] ?? null;
+    initialToday = {
+      date: today,
+      isToday: true,
+      recovery: todayRecovery,
+      workout: todayWorkout,
+      activity: null,
+      compliance: null,
+      recommendation: todayRecovery ? getDailyRecommendation(Number(todayRecovery.recovery_score), todayWorkout) : null,
+    };
 
     weekTiles = weekDates.map((date, i) => ({
       date,
       dayName: DAY_NAMES[i],
-      isToday: date === today,
       workout: weekWorkouts.find((w: any) => fmtDate(w.scheduled_date) === date) ?? null,
     }));
 
     if (weekWorkouts.length > 0) {
       const weekTotalTss = weekWorkouts.reduce((sum: number, w: any) => sum + (w.target_tss ?? 0), 0);
       const weekTotalMin = weekWorkouts.reduce((sum: number, w: any) => sum + (w.target_duration_min ?? 0), 0);
-      const weekTotalHrs = (weekTotalMin / 60).toFixed(1);
-      weekLabel = `${weekWorkouts[0].phase} · week ${weekWorkouts[0].week_number}/${activePlan.duration_weeks} · ${weekTotalHrs}h · ${weekTotalTss} TSS`;
+      weekLabel = `${weekWorkouts[0].phase} · week ${weekWorkouts[0].week_number}/${activePlan.duration_weeks} · ${(weekTotalMin / 60).toFixed(1)}h · ${weekTotalTss} TSS`;
       currentWeekNumber = weekWorkouts[0].week_number;
     }
 
@@ -131,92 +122,15 @@ export default async function Dashboard() {
       </div>
 
       {activePlan ? (
-        <>
-          <div className="today-card">
-            <p className="today-eyebrow">
-              Today ·{" "}
-              {todayDate.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
-            </p>
-
-            {todayRecommendation ? (
-              <>
-                <div className="today-main">
-                  <div className="readout">
-                    <div className={`readout-value mono ${todayRecommendation.band}`}>
-                      {todayRecommendation.recoveryScore}
-                    </div>
-                    <div className="readout-label">Recovery %</div>
-                  </div>
-                  <div className="today-message">{todayRecommendation.message}</div>
-                </div>
-
-                {todayWorkout && (
-                  <div className="today-workout">
-                    <div>
-                      <div className="workout-title">{todayWorkout.title}</div>
-                      <div className="workout-desc">{todayWorkout.description}</div>
-                    </div>
-                    <div className="workout-meta mono">
-                      {todayWorkout.target_duration_min}min · ~{todayWorkout.target_tss} TSS
-                      {todayWorkout.completed_activity_id && (
-                        <>
-                          {" "}
-                          · ✅{" "}
-                          <a href={`/api/plans/workouts/${todayWorkout.id}/compliance`}>compliance</a>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="empty-today">
-                {todayWorkout
-                  ? `No WHOOP recovery synced yet — today's workout is "${todayWorkout.title}".`
-                  : "No workout scheduled today."}
-              </p>
-            )}
-          </div>
-
-          <div className="week-section">
-            <div className="week-header">
-              <span className="week-title">This week</span>
-              <span className="week-phase mono">{weekLabel}</span>
-            </div>
-            <div className="week-strip">
-              {weekTiles.map((tile) => (
-                <a
-                  key={tile.date}
-                  href={`/dashboard/day/${tile.date}`}
-                  className={`day-tile ${tile.isToday ? "today" : ""} ${!tile.workout ? "rest" : ""}`}
-                >
-                  {tile.workout?.completed_activity_id && <span className="day-check">✅</span>}
-                  <div className="day-name mono">{tile.dayName}</div>
-                  {tile.workout ? (
-                    <>
-                      <div
-                        className="day-zone-bar"
-                        style={{ background: zoneColorVar(tile.workout.title) }}
-                      />
-                      <div className="day-label">{tile.workout.title}</div>
-                      <div className="day-dur mono">
-                        {tile.workout.target_duration_min}min · {tile.workout.target_tss} TSS
-                      </div>
-                    </>
-                  ) : (
-                    <div className="day-label" style={{ color: "var(--text-muted)" }}>
-                      Rest
-                    </div>
-                  )}
-                </a>
-              ))}
-            </div>
-          </div>
-
-          {allWeeks.length > 0 && (
-            <WeekTabs weeks={allWeeks} planStartDate={fmtDate(activePlan.start_date)} currentWeekNumber={currentWeekNumber} />
-          )}
-        </>
+        <PlanDashboard
+          todayDateStr={today}
+          initialToday={initialToday}
+          weekTiles={weekTiles}
+          weekLabel={weekLabel}
+          allWeeks={allWeeks}
+          planStartDate={fmtDate(activePlan.start_date)}
+          currentWeekNumber={currentWeekNumber}
+        />
       ) : (
         <div className="today-card">
           <p className="empty-today">No active plan yet — set one up below.</p>
