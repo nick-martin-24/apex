@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { computeCompliance } from "@/lib/compliance";
 import { getDailyRecommendation } from "@/lib/recommendation";
+import { getEasternDateString } from "@/lib/date";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, { params }: { params: { date: string } }) {
   const { date } = params;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getEasternDateString();
   const isToday = date === today;
 
   const [{ rows: planRows }, { rows: recoveryRows }] = await Promise.all([

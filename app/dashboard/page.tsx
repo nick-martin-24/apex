@@ -1,6 +1,7 @@
 import { pool } from "@/lib/db";
 import { getToken } from "@/lib/tokens";
 import { getDailyRecommendation } from "@/lib/recommendation";
+import { getEasternDateString } from "@/lib/date";
 import PlanForm from "./PlanForm";
 import PlanDashboard from "./PlanDashboard";
 
@@ -27,8 +28,14 @@ export default async function Dashboard() {
   );
   const activePlan = planRows[0] ?? null;
 
-  const todayDate = new Date();
-  const today = todayDate.toISOString().slice(0, 10);
+  // "today" is computed in US Eastern time, not the server's default UTC —
+  // otherwise the day rolls over ~4-5 hours early (e.g. 8pm ET already
+  // showing as tomorrow). Once we have the correct Eastern calendar date,
+  // treating it as local midnight for weekday/Monday math below is safe and
+  // timezone-independent, since weekday-of-a-date doesn't depend on TZ once
+  // the date itself is already correct.
+  const today = getEasternDateString();
+  const todayDate = new Date(today + "T00:00:00");
 
   let initialToday: any = { date: today, isToday: true, recovery: null, workout: null, activity: null, compliance: null, recommendation: null };
   let weekTiles: Array<{ date: string; dayName: string; workout: any | null }> = [];

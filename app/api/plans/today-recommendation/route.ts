@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getDailyRecommendation } from "@/lib/recommendation";
+import { getEasternDateString } from "@/lib/date";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getEasternDateString();
 
   const [{ rows: recoveryRows }, { rows: workoutRows }] = await Promise.all([
     pool.query("select recovery_score from recovery_days where date = $1", [today]),
