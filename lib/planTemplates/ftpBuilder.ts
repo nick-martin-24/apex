@@ -132,6 +132,18 @@ export function tempo(dayOffset: number, minutes: number): WorkoutTemplate {
   };
 }
 
+export function groupRide(dayOffset: number, minutes: number): WorkoutTemplate {
+  const structure = [{ type: "steady", min: minutes, pct_ftp: [60, 85] }];
+  return {
+    dayOffset,
+    title: "Group ride",
+    description: `${minutes} min group ride — variable pace and effort depending on the group, expect surges.`,
+    targetDurationMin: minutes,
+    targetTss: computeTargetTss(structure),
+    structure,
+  };
+}
+
 export function sweetSpot(dayOffset: number, reps: number, onMin: number): WorkoutTemplate {
   const totalMin = 15 + reps * (onMin + 5) + 10;
   const structure = [

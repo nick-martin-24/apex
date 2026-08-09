@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import AdjustWorkout from "./AdjustWorkout";
+import AddWorkout from "./AddWorkout";
 
 function zoneColorVar(title: string): string {
   if (title.startsWith("Recovery")) return "var(--z1)";
   if (title.startsWith("Endurance")) return "var(--z2)";
+  if (title.startsWith("Group ride")) return "var(--z2)";
   if (title.startsWith("Tempo")) return "var(--z3)";
   if (title.startsWith("Sweet spot")) return "var(--z4)";
   if (title.startsWith("Threshold")) return "var(--z4)";
@@ -164,13 +166,17 @@ export default function PlanDashboard({
               {data.workout && !data.workout.completed_activity_id && (
                 <AdjustWorkout workoutId={data.workout.id} date={data.date} />
               )}
+              {!data.workout && <AddWorkout date={data.date} />}
             </>
           ) : (
-            <p className="empty-today">
-              {data.workout
-                ? `No WHOOP recovery synced yet — today's workout is "${data.workout.title}".`
-                : "No workout scheduled today."}
-            </p>
+            <>
+              <p className="empty-today">
+                {data.workout
+                  ? `No WHOOP recovery synced yet — today's workout is "${data.workout.title}".`
+                  : "No workout scheduled today."}
+              </p>
+              {!data.workout && <AddWorkout date={data.date} />}
+            </>
           )
         ) : (
           <>
@@ -196,6 +202,7 @@ export default function PlanDashboard({
             {data.workout && !data.workout.completed_activity_id && (
               <AdjustWorkout workoutId={data.workout.id} date={data.date} />
             )}
+            {!data.workout && <AddWorkout date={data.date} />}
             {data.activity && data.compliance && (
               <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>

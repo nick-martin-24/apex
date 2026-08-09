@@ -3,6 +3,7 @@ import {
   endurance,
   recovery,
   tempo,
+  groupRide,
   sweetSpot,
   threshold,
   vo2max,
@@ -12,7 +13,13 @@ import {
 } from "./planTemplates/ftpBuilder";
 import { isKeyWorkout, getRecoveryBand, RecoveryBand } from "./recommendation";
 
-export type SwapType = KeyWorkoutType | "endurance" | "recovery";
+export type SwapType = KeyWorkoutType | "endurance" | "recovery" | "group_ride";
+
+// Types allowed when adding a brand-new workout to a rest day — intentionally
+// a smaller set than full swap types, since a rest day getting a ride is
+// meant to stay easy/moderate, not become a key session.
+export const ADDABLE_TYPES = ["recovery", "endurance", "group_ride"] as const;
+export type AddableType = (typeof ADDABLE_TYPES)[number];
 
 // Sensible defaults if the caller doesn't specify reps/duration for an
 // interval-type swap — roughly matches an early-plan version of each type.
@@ -23,6 +30,7 @@ const SWAP_DEFAULTS: Record<string, { reps?: number; onMin?: number; minutes?: n
   sprints: { reps: 5 },
   tempo: { minutes: 30 },
   endurance: { minutes: 75 },
+  group_ride: { minutes: 90 },
 };
 
 export function generateSwap(
@@ -40,6 +48,8 @@ export function generateSwap(
       return recovery(dayOffset);
     case "endurance":
       return endurance(dayOffset, minutes);
+    case "group_ride":
+      return groupRide(dayOffset, minutes);
     case "tempo":
       return tempo(dayOffset, minutes);
     case "sweetspot":
@@ -123,6 +133,61 @@ export async function moveWorkout(workoutId: number, newDate: string) {
   }
 
   return { moved: workoutId, newDate, swappedWith: existing ? { id: existing.id, movedTo: workout.scheduled_date.toISOString().slice(0, 10) } : null };
+}
+
+// Adds a brand-new workout to a date that doesn't have one yet — for filling
+// in a rest day with a recovery spin, endurance ride, or group ride. Refuses
+// if that date already has a workout (use swap instead for existing days).
+export async function addWorkout(
+  planId: number,
+  date: string,
+  type: AddableType,
+  params: { minutes?: number }
+) {
+  const { rows: planRows } = await pool.query("select start_date from plans where id = $1", [planId]);
+  if (planRows.length === 0) throw new Error("Plan not found");
+  const planStartDate = planRows[0].start_date.toISOString().slice(0, 10);
+
+  const { rows: existingRows } = await pool.query(
+    "select id from planned_workouts where plan_id = $1 and scheduled_date = $2",
+    [planId, date]
+  );
+  if (existingRows.length > 0) {
+    throw new Error("That day already has a workout — use swap instead of add");
+  }
+
+  const pos = weekdayOffset(planStartDate, date);
+  const generated = generateSwap(type, params, pos.dayOffset);
+
+  // Inherit this week's actual phase from an existing workout in the same
+  // week, so the addition blends in with the rest of the plan's labeling
+  // rather than showing a placeholder phase.
+  const { rows: phaseRows } = await pool.query(
+    "select phase from planned_workouts where plan_id = $1 and week_number = $2 limit 1",
+    [planId, pos.weekNumber]
+  );
+  const phase = phaseRows[0]?.phase ?? "base";
+
+  const { rows } = await pool.query(
+    `insert into planned_workouts
+       (plan_id, week_number, phase, day_offset, scheduled_date, title, description, target_duration_min, target_tss, structure)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     returning id`,
+    [
+      planId,
+      pos.weekNumber,
+      phase,
+      pos.dayOffset,
+      date,
+      generated.title,
+      generated.description,
+      generated.targetDurationMin,
+      generated.targetTss,
+      JSON.stringify(generated.structure),
+    ]
+  );
+
+  return { id: rows[0].id, ...generated };
 }
 
 // ---------- Preview: assess impact before applying ----------
@@ -303,6 +368,36 @@ export async function previewMove(workoutId: number, newDate: string): Promise<A
 
   return {
     weeks,
+    recovery: recoveryAdvice,
+    proximity: proximityAdvice,
+    overall: combineOverall(recoveryAdvice, proximityAdvice),
+  };
+}
+
+export async function previewAdd(
+  planId: number,
+  date: string,
+  type: AddableType,
+  params: { minutes?: number }
+): Promise<AdjustmentPreview> {
+  const { rows: planRows } = await pool.query("select start_date from plans where id = $1", [planId]);
+  if (planRows.length === 0) throw new Error("Plan not found");
+  const planStartDate = planRows[0].start_date.toISOString().slice(0, 10);
+
+  const pos = weekdayOffset(planStartDate, date);
+  const generated = generateSwap(type, params, pos.dayOffset);
+
+  const tssBefore = await weekTssTotal(planId, pos.weekNumber);
+  const tssAfter = tssBefore + generated.targetTss; // adding, not replacing
+
+  const isKey = isKeyWorkout(generated.structure); // always false for addable types, kept for consistency
+  const { rows: recoveryRows } = await pool.query("select recovery_score from recovery_days where date = $1", [date]);
+  const recoveryAdvice = adviseOnRecovery(recoveryRows[0] ?? null, isKey);
+  // No existing workout id to exclude yet — 0 never matches a real row.
+  const proximityAdvice = await adviseOnProximity(planId, date, isKey, 0);
+
+  return {
+    weeks: [{ weekNumber: pos.weekNumber, tssBefore, tssAfter, delta: tssAfter - tssBefore }],
     recovery: recoveryAdvice,
     proximity: proximityAdvice,
     overall: combineOverall(recoveryAdvice, proximityAdvice),
