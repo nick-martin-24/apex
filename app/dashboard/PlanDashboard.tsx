@@ -73,6 +73,8 @@ export default function PlanDashboard({
   initialToday,
   weekTiles,
   weekLabel,
+  weekPlanned,
+  weekActual,
   allWeeks,
   planStartDate,
   currentWeekNumber,
@@ -81,6 +83,8 @@ export default function PlanDashboard({
   initialToday: DayData;
   weekTiles: WeekTile[];
   weekLabel: string;
+  weekPlanned: { plannedMin: number; plannedTss: number };
+  weekActual: { actualMin: number; actualTss: number };
   allWeeks: WeekGroup[];
   planStartDate: string;
   currentWeekNumber: number;
@@ -272,6 +276,40 @@ export default function PlanDashboard({
           <span className="week-title">This week</span>
           <span className="week-phase mono">{weekLabel}</span>
         </div>
+
+        <div className="week-progress">
+          <div className="week-progress-row">
+            <span className="week-progress-label">Time</span>
+            <div className="zone-bar-track">
+              <div
+                className="zone-bar-fill"
+                style={{
+                  width: `${weekPlanned.plannedMin > 0 ? Math.min((weekActual.actualMin / weekPlanned.plannedMin) * 100, 100) : 0}%`,
+                  background: "var(--accent)",
+                }}
+              />
+            </div>
+            <span className="week-progress-value mono">
+              {fmtHoursMinutes(weekActual.actualMin)} / {fmtHoursMinutes(weekPlanned.plannedMin)}
+            </span>
+          </div>
+          <div className="week-progress-row">
+            <span className="week-progress-label">TSS</span>
+            <div className="zone-bar-track">
+              <div
+                className="zone-bar-fill"
+                style={{
+                  width: `${weekPlanned.plannedTss > 0 ? Math.min((weekActual.actualTss / weekPlanned.plannedTss) * 100, 100) : 0}%`,
+                  background: "var(--accent)",
+                }}
+              />
+            </div>
+            <span className="week-progress-value mono">
+              {weekActual.actualTss} / {weekPlanned.plannedTss}
+            </span>
+          </div>
+        </div>
+
         <div className="week-strip">
           {weekTiles.map((tile) => (
             <button

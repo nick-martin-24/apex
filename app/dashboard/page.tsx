@@ -2,6 +2,7 @@ import { pool } from "@/lib/db";
 import { getToken } from "@/lib/tokens";
 import { getDailyRecommendation } from "@/lib/recommendation";
 import { getEasternDateString } from "@/lib/date";
+import { computeActualTss } from "@/lib/tss";
 import PlanForm from "./PlanForm";
 import PlanDashboard from "./PlanDashboard";
 import CoachCheckin from "./CoachCheckin";
@@ -45,6 +46,8 @@ export default async function Dashboard() {
   let initialToday: any = { date: today, isToday: true, recovery: null, workout: null, activity: null, compliance: null, assessment: null, recommendation: null };
   let weekTiles: Array<{ date: string; dayName: string; workout: any | null }> = [];
   let weekLabel = "";
+  let weekPlanned = { plannedMin: 0, plannedTss: 0 };
+  let weekActual = { actualMin: 0, actualTss: 0 };
   let currentWeekNumber = 1;
   let allWeeks: Array<{ weekNumber: number; phase: string; workouts: any[] }> = [];
 
@@ -93,7 +96,28 @@ export default async function Dashboard() {
       const weekTotalTss = weekWorkouts.reduce((sum: number, w: any) => sum + (w.target_tss ?? 0), 0);
       const weekTotalMin = weekWorkouts.reduce((sum: number, w: any) => sum + (w.target_duration_min ?? 0), 0);
       weekLabel = `${weekWorkouts[0].phase} · week ${weekWorkouts[0].week_number}/${activePlan.duration_weeks} · ${fmtHoursMinutes(weekTotalMin)} · ${weekTotalTss} TSS`;
+      weekPlanned = { plannedMin: weekTotalMin, plannedTss: weekTotalTss };
       currentWeekNumber = weekWorkouts[0].week_number;
+
+      // Cumulative actuals so far this week, from real ride data — not the
+      // plan's targets. Only counts workouts that are actually linked to a
+      // completed ride; everything else contributes 0 until it's ridden.
+      const completedThisWeek = weekWorkouts.filter((w: any) => w.completed_activity_id);
+      if (completedThisWeek.length > 0) {
+        const { rows: acts } = await pool.query(
+          `select moving_time_s, avg_watts, weighted_avg_watts from activities where id = any($1)`,
+          [completedThisWeek.map((w: any) => w.completed_activity_id)]
+        );
+        let actualMin = 0;
+        let actualTss = 0;
+        for (const a of acts) {
+          const mins = Math.round(a.moving_time_s / 60);
+          actualMin += mins;
+          const power = a.weighted_avg_watts ?? a.avg_watts;
+          if (currentFtp && power) actualTss += computeActualTss(mins, power, currentFtp);
+        }
+        weekActual = { actualMin, actualTss };
+      }
     }
 
     const { rows: everyWorkout } = await pool.query(
@@ -131,6 +155,8 @@ export default async function Dashboard() {
           initialToday={initialToday}
           weekTiles={weekTiles}
           weekLabel={weekLabel}
+          weekPlanned={weekPlanned}
+          weekActual={weekActual}
           allWeeks={allWeeks}
           planStartDate={fmtDate(activePlan.start_date)}
           currentWeekNumber={currentWeekNumber}

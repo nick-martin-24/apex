@@ -1,9 +1,14 @@
 import { pool } from "./db";
+import { getEasternDateString } from "./date";
 
 // Looks for an active plan's workout scheduled on the same calendar date as
 // the given ride, and links it if found and not already linked to something else.
 export async function matchActivityToPlannedWorkout(activityId: string, activityStartDate: string) {
-  const rideDate = activityStartDate.slice(0, 10); // YYYY-MM-DD, drop time component
+  // Strava's start_date is UTC — convert to Eastern before comparing, since
+  // that's the timezone every planned_workout's scheduled_date is computed
+  // in. A naive UTC slice can land on the wrong calendar date for rides near
+  // the UTC day boundary (evening/early-morning Eastern).
+  const rideDate = getEasternDateString(new Date(activityStartDate));
 
   const { rows } = await pool.query(
     `select pw.id from planned_workouts pw
@@ -35,7 +40,7 @@ export async function rematchAllForActivePlan(): Promise<number> {
     `select pw.id as workout_id, a.id as activity_id
      from planned_workouts pw
      join plans p on p.id = pw.plan_id
-     join activities a on a.start_date::date = pw.scheduled_date
+     join activities a on (a.start_date at time zone 'America/New_York')::date = pw.scheduled_date
      where p.status = 'active' and pw.completed_activity_id is null`
   );
 
