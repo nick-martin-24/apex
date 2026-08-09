@@ -1,5 +1,6 @@
 import { pool } from "./db";
 import { computeCompliance, assessCompliance } from "./compliance";
+import { previewSwap, previewMove, previewAdd, SwapType, AddableType } from "./planAdjustment";
 
 interface RecentWorkoutSummary {
   date: string;
@@ -11,7 +12,17 @@ interface RecentWorkoutSummary {
   band: "green" | "yellow" | "red";
 }
 
+interface UpcomingWorkout {
+  id: number;
+  date: string;
+  title: string;
+  targetDurationMin: number;
+  targetTss: number;
+}
+
 interface CoachContext {
+  planId: number | null;
+  today: string;
   ftpWatts: number | null;
   plan: {
     type: string;
@@ -22,7 +33,7 @@ interface CoachContext {
   } | null;
   recentWorkouts: RecentWorkoutSummary[];
   recoveryTrend: Array<{ date: string; recoveryScore: number; hrvMs: number | null }>;
-  upcomingWorkouts: Array<{ date: string; title: string; targetDurationMin: number; targetTss: number }>;
+  upcomingWorkouts: UpcomingWorkout[];
 }
 
 async function gatherCoachContext(): Promise<CoachContext> {
@@ -34,11 +45,11 @@ async function gatherCoachContext(): Promise<CoachContext> {
   );
   const activePlan = planRows[0] ?? null;
 
+  const today = new Date().toISOString().slice(0, 10);
   let recentWorkouts: RecentWorkoutSummary[] = [];
-  let upcomingWorkouts: CoachContext["upcomingWorkouts"] = [];
+  let upcomingWorkouts: UpcomingWorkout[] = [];
 
   if (activePlan) {
-    const today = new Date().toISOString().slice(0, 10);
     const fourteenDaysAgo = new Date();
     fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
     const startWindow = fourteenDaysAgo.toISOString().slice(0, 10);
@@ -88,6 +99,7 @@ async function gatherCoachContext(): Promise<CoachContext> {
       [activePlan.id, today, endWindow]
     );
     upcomingWorkouts = upcomingRows.map((w: any) => ({
+      id: w.id,
       date: w.scheduled_date.toISOString().slice(0, 10),
       title: w.title,
       targetDurationMin: w.target_duration_min,
@@ -95,9 +107,7 @@ async function gatherCoachContext(): Promise<CoachContext> {
     }));
   }
 
-  const { rows: recoveryRows } = await pool.query(
-    "select * from recovery_days order by date desc limit 7"
-  );
+  const { rows: recoveryRows } = await pool.query("select * from recovery_days order by date desc limit 7");
   const recoveryTrend = recoveryRows
     .map((r: any) => ({
       date: r.date.toISOString().slice(0, 10),
@@ -107,6 +117,8 @@ async function gatherCoachContext(): Promise<CoachContext> {
     .reverse(); // oldest first, easier to read as a trend
 
   return {
+    planId: activePlan?.id ?? null,
+    today,
     ftpWatts,
     plan: activePlan
       ? {
@@ -126,6 +138,7 @@ async function gatherCoachContext(): Promise<CoachContext> {
 function formatContextForPrompt(ctx: CoachContext): string {
   const lines: string[] = [];
 
+  lines.push(`Today's date: ${ctx.today}`);
   lines.push(`Athlete FTP: ${ctx.ftpWatts ?? "not set"} watts`);
 
   if (ctx.plan) {
@@ -159,29 +172,124 @@ function formatContextForPrompt(ctx: CoachContext): string {
   }
 
   lines.push("");
-  lines.push("Upcoming planned workouts (next 7 days):");
+  lines.push("Upcoming planned workouts (next 7 days, with their workout_id for tool calls):");
   if (ctx.upcomingWorkouts.length === 0) {
     lines.push("(none scheduled)");
   } else {
     for (const w of ctx.upcomingWorkouts) {
-      lines.push(`- ${w.date} "${w.title}": ${w.targetDurationMin}min, ~${w.targetTss} TSS`);
+      lines.push(`- id=${w.id} ${w.date} "${w.title}": ${w.targetDurationMin}min, ~${w.targetTss} TSS`);
     }
   }
 
   return lines.join("\n");
 }
 
+const TOOLS = [
+  {
+    name: "preview_swap",
+    description:
+      "Preview the impact of replacing an existing planned workout's type/content (e.g. turning a VO2max session into an easier endurance ride). Does not change anything — read-only.",
+    input_schema: {
+      type: "object",
+      properties: {
+        workout_id: { type: "integer", description: "id of the existing planned workout, from the upcoming workouts list" },
+        workout_type: {
+          type: "string",
+          enum: ["recovery", "endurance", "group_ride", "tempo", "sweetspot", "threshold", "vo2max", "sprints"],
+        },
+        reps: { type: "integer", description: "for interval types only" },
+        on_min: { type: "number", description: "minutes per interval, for interval types only" },
+        minutes: { type: "number", description: "total ride minutes, for steady types (endurance/tempo/group_ride)" },
+      },
+      required: ["workout_id", "workout_type"],
+    },
+  },
+  {
+    name: "preview_move",
+    description:
+      "Preview the impact of rescheduling an existing planned workout to a different date. If that date already has a workout, they swap places. Does not change anything — read-only.",
+    input_schema: {
+      type: "object",
+      properties: {
+        workout_id: { type: "integer" },
+        new_date: { type: "string", description: "YYYY-MM-DD" },
+      },
+      required: ["workout_id", "new_date"],
+    },
+  },
+  {
+    name: "preview_add",
+    description:
+      "Preview the impact of adding a brand-new easy ride (recovery/endurance/group_ride only) to a date that currently has no planned workout. Does not change anything — read-only.",
+    input_schema: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "YYYY-MM-DD, must be a rest day with no existing workout" },
+        workout_type: { type: "string", enum: ["recovery", "endurance", "group_ride"] },
+        minutes: { type: "number" },
+      },
+      required: ["date", "workout_type"],
+    },
+  },
+];
+
+async function executeTool(name: string, input: any, planId: number | null): Promise<any> {
+  if (name === "preview_swap") {
+    return previewSwap(input.workout_id, input.workout_type as SwapType, {
+      reps: input.reps,
+      onMin: input.on_min,
+      minutes: input.minutes,
+    });
+  }
+  if (name === "preview_move") {
+    return previewMove(input.workout_id, input.new_date);
+  }
+  if (name === "preview_add") {
+    if (!planId) return { error: "No active plan" };
+    return previewAdd(planId, input.date, input.workout_type as AddableType, { minutes: input.minutes });
+  }
+  return { error: `Unknown tool ${name}` };
+}
+
 const SYSTEM_PROMPT = `You are an experienced, pragmatic cycling coach reviewing one specific athlete's real training data. You are not talking to a hypothetical athlete — every number below is real.
+
+You have tools to preview the impact of a specific change (swapping a workout's type, moving it to another day, or adding an easy ride to a rest day) — these are read-only, they don't change anything. If you're considering recommending a concrete change, call the relevant preview tool FIRST to check it's actually a good idea (e.g. don't recommend a swap that would spike this week's TSS, or land a hard session next to another hard session — the tool will tell you). If the preview comes back with overall "not_recommended", don't propose it; either drop the idea or think of a better one.
 
 Give a concise check-in: 3-5 short paragraphs, plain language, no headers or bullet lists. Cover:
 1. What's going well and what's not, citing specific dates, workout names, and numbers from the data given.
 2. Any pattern worth flagging — consistently under-hitting intervals, recovery trending down, TSS creeping over or under target, etc.
-3. A specific, actionable recommendation for the next few days if one is warranted. Reference actual upcoming workout titles/dates from the data. If a change seems warranted, describe it concretely (e.g. "consider swapping Thursday's VO2max session for an easier endurance ride" or "worth pushing Tuesday's threshold work a little harder given how well the last two sessions went").
+3. A specific, actionable recommendation for the next few days if one is warranted, described in plain language.
 4. If everything looks solid, say so plainly — don't manufacture concern where there isn't any.
 
-Be direct and specific, not generic filler. Do not add disclaimers about not being a real coach or suggesting they consult a professional — just coach them.`;
+Be direct and specific, not generic filler. Do not add disclaimers about not being a real coach — just coach them.
 
-export async function getCoachCheckin(): Promise<{ checkin: string; generatedAt: string }> {
+If — and only if — you end up recommending one specific concrete change that you've validated with a preview tool and the preview was "recommended" or "caution" (not "not_recommended"), end your response with a single fenced block exactly like this, using the real parameters from your tool call:
+
+\`\`\`action
+{"action":"swap","workout_id":123,"workout_type":"endurance","minutes":75}
+\`\`\`
+
+(or "move" with workout_id + new_date, or "add" with date + workout_type + minutes). Omit this block entirely if you're not recommending one specific validated change — most check-ins won't need one.`;
+
+function extractAction(text: string): { prose: string; action: any | null } {
+  const match = text.match(/```action\s*([\s\S]*?)```/);
+  if (!match) return { prose: text.trim(), action: null };
+
+  const prose = text.slice(0, match.index).trim();
+  try {
+    const action = JSON.parse(match[1].trim());
+    return { prose, action };
+  } catch {
+    return { prose, action: null };
+  }
+}
+
+export async function getCoachCheckin(): Promise<{
+  checkin: string;
+  proposedAction: any | null;
+  actionPreview: any | null;
+  generatedAt: string;
+}> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY is not set — add it to your Vercel environment variables");
@@ -190,28 +298,59 @@ export async function getCoachCheckin(): Promise<{ checkin: string; generatedAt:
   const context = await gatherCoachContext();
   const contextText = formatContextForPrompt(context);
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-5",
-      max_tokens: 700,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: contextText }],
-    }),
-  });
+  const messages: any[] = [{ role: "user", content: contextText }];
+  let lastPreview: any = null;
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Anthropic API error: ${text}`);
+  // Tool-use loop: Claude may call preview tools a few times before its final answer.
+  for (let i = 0; i < 4; i++) {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-5",
+        max_tokens: 900,
+        system: SYSTEM_PROMPT,
+        tools: TOOLS,
+        messages,
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Anthropic API error: ${text}`);
+    }
+
+    const data = await res.json();
+
+    if (data.stop_reason === "tool_use") {
+      messages.push({ role: "assistant", content: data.content });
+      const toolResults = [];
+      for (const block of data.content) {
+        if (block.type === "tool_use") {
+          const result = await executeTool(block.name, block.input, context.planId);
+          if (!result.error) lastPreview = result;
+          toolResults.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(result) });
+        }
+      }
+      messages.push({ role: "user", content: toolResults });
+      continue; // let Claude see the tool results and continue
+    }
+
+    // Final answer
+    const text = data.content?.map((b: any) => b.text ?? "").join("") ?? "";
+    const { prose, action } = extractAction(text);
+
+    return {
+      checkin: prose,
+      proposedAction: action,
+      actionPreview: action ? lastPreview : null,
+      generatedAt: new Date().toISOString(),
+    };
   }
 
-  const data = await res.json();
-  const checkin = data.content?.map((b: any) => b.text ?? "").join("") ?? "";
-
-  return { checkin, generatedAt: new Date().toISOString() };
+  throw new Error("Coach didn't reach a final answer after several tool calls");
 }
